@@ -5,10 +5,10 @@ os.environ['PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION'] = 'python'
 # -------------------------
 # 1. Enhanced Config
 # -------------------------
-CONFLUENCE_BASE_URL = "https://confluence.sage.com/rest/api"
-CONFLUENCE_API_TOKEN = "NTU1NTAzNjUyMTg1OgPvyjhzh5Akjfn8eahK1Ssc0YJj"
-CONFLUENCE_ROOT_PAGE_ID = 417798815
-SPACE_KEY = "FRCIELESP"
+CONFLUENCE_BASE_URL = os.getenv("CONFLUENCE_BASE_URL")
+CONFLUENCE_API_TOKEN = os.getenv("CONFLUENCE_API_TOKEN")
+CONFLUENCE_ROOT_PAGE_ID = os.getenv("CONFLUENCE_ROOT_PAGE_ID")
+SPACE_KEY = os.getenv("SPACE_KEY")
 
 QDRANT_URL = "http://localhost:6333"
 COLLECTION_NAME = "confluence_pages_sxp_enhanced_v3"
