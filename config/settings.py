@@ -1,37 +1,32 @@
-"""
-Configuration settings for the Confluence Search Engine.
-This module handles sensitive information and model parameters.
-"""
 import os
-from typing import Final
+
+os.environ['PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION'] = 'python'
 
 # -------------------------
-# Confluence API Configuration
+# 1. Enhanced Config
 # -------------------------
-# Fetch sensitive data from environment variables for security.
-CONFLUENCE_BASE_URL: Final[str] = os.getenv("CONFLUENCE_BASE_URL", "https://confluence.sage.com/rest/api")
-CONFLUENCE_API_TOKEN: Final[str] = os.getenv("CONFLUENCE_API_TOKEN", "your-api-token-here") # Use a default for dev
-CONFLUENCE_ROOT_PAGE_ID: Final[int] = int(os.getenv("CONFLUENCE_ROOT_PAGE_ID", "417798815"))
-SPACE_KEY: Final[str] = os.getenv("SPACE_KEY", "FRCIELESP")
+CONFLUENCE_BASE_URL = "https://confluence.sage.com/rest/api"
+CONFLUENCE_API_TOKEN = "NTU1NTAzNjUyMTg1OgPvyjhzh5Akjfn8eahK1Ssc0YJj"
+CONFLUENCE_ROOT_PAGE_ID = 417798815
+SPACE_KEY = "FRCIELESP"
 
-# -------------------------
-# Qdrant Vector DB Configuration
-# -------------------------
-QDRANT_URL: Final[str] = os.getenv("QDRANT_URL", "http://localhost:6333")
-COLLECTION_NAME: Final[str] = os.getenv("COLLECTION_NAME", "confluence_pages_sxp_enhanced_v3")
-EMBEDDING_SIZE: Final[int] = 768
+QDRANT_URL = "http://localhost:6333"
+COLLECTION_NAME = "confluence_pages_sxp_enhanced_v3"
 
-# -------------------------
-# Embedding and NLP Configuration
-# -------------------------
-SENTENCE_TRANSFORMER: Final[str] = 'all-mpnet-base-v2'
+# Enhanced embedding configuration
+SENTENCE_TRANSFORMER = 'all-mpnet-base-v2'
+EMBEDDING_SIZE = 768
 
-# Advanced text processing
-CHUNK_SIZE_LIMIT: Final[int] = 600
-CHUNK_OVERLAP: Final[int] = 150
-MIN_CHUNK_SIZE: Final[int] = 50
+# Advanced text processing configuration
+CHUNK_SIZE_LIMIT = 600  # Slightly larger chunks for better context
+CHUNK_OVERLAP = 150  # More overlap for better continuity
+MIN_CHUNK_SIZE = 50  # Minimum viable chunk size
+ENRICH_WITH_NEIGHBORS = 1
 
 # Search configuration
-DEFAULT_TOP_K: Final[int] = 10
-RERANK_TOP_K: Final[int] = 20
-HYBRID_ALPHA: Final[float] = 0.7
+DEFAULT_TOP_K = 10
+RERANK_TOP_K = 20
+HYBRID_ALPHA = 0.7  # Weight for semantic vs keyword search (0.7 = 70% semantic, 30% keyword)
+
+LLM_BACKEND_TYPE="ollama"
+LLM_MODEL="phi3.5_q8_0"
