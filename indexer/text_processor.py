@@ -6,7 +6,7 @@ import nltk
 from bs4 import BeautifulSoup
 # Import NLTK components for natural language processing tasks
 from nltk import WordNetLemmatizer, sent_tokenize
-from nltk.corpus import stopwords
+from nltk.corpus import stopwords, wordnet
 
 # --- NLTK Data Check and Download ---
 # This block ensures all necessary NLTK data files (for tokenization, stop words, and lemmatization)
@@ -23,6 +23,8 @@ except LookupError:
     nltk.download('stopwords')
     # WordNet is used for lemmatization
     nltk.download('wordnet')
+_ = stopwords.words('english')
+_ = wordnet.synsets('example')
 
 class EnhancedTextProcessor:
     """
