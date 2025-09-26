@@ -1,4 +1,5 @@
 import pickle
+import os
 from typing import List, Tuple
 
 from qdrant_client.local.distances import cosine_similarity
@@ -54,10 +55,11 @@ class HybridSearchIndex:
         return results
 
     def load_tfidf(self):
-        with open(self.save_location, 'rb') as f:
-            data = pickle.load(f)
-        if data is not None and 'vectorizer' in data and 'matrix' in data and 'document_map' in data:
-            self.tfidf_vectorizer = data['vectorizer']
-            self.tfidf_matrix = data['matrix']
-            self.document_map = data['document_map']
-            self.is_fitted = True
+        if os.path.isfile(self.save_location):
+            with open(self.save_location, 'rb') as f:
+                data = pickle.load(f)
+            if data is not None and 'vectorizer' in data and 'matrix' in data and 'document_map' in data:
+                self.tfidf_vectorizer = data['vectorizer']
+                self.tfidf_matrix = data['matrix']
+                self.document_map = data['document_map']
+                self.is_fitted = True
