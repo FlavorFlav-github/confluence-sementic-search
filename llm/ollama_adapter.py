@@ -6,6 +6,7 @@ import requests
 
 from config.logging_config import logger
 from llm.base_adapter import LLMAdapter
+from config.settings import ENRICH_WITH_NEIGHBORS
 
 
 class OllamaModelAdapter(LLMAdapter):
