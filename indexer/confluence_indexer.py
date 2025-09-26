@@ -1,5 +1,8 @@
-import uuid
+from uuid import uuid5, NAMESPACE_URL
 from typing import List, Dict
+import asyncio
+import aiohttp
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import requests
 from qdrant_client import QdrantClient
@@ -26,7 +29,7 @@ class ConfluenceIndexer:
 
     def __init__(self, qdrant_client: QdrantClient, embedding_model: SentenceTransformer,
                  text_processor: EnhancedTextProcessor, hybrid_index: HybridSearchIndex,
-                 root_page_id: int, collection_name: str, space_key: str,
+                 root_page_id: int, collection_name: str,
                  embedding_size: int, confluence_base_url: str, confluence_api_token: str):
         """
         Initializes the indexer with all required dependencies and configuration.
@@ -38,7 +41,6 @@ class ConfluenceIndexer:
             hybrid_index (HybridSearchIndex): The keyword-based index for hybrid search.
             root_page_id (int): The starting page ID for recursive indexing.
             collection_name (str): The name of the Qdrant collection.
-            space_key (str): The Confluence space key.
             embedding_size (int): The dimension of the vector embeddings.
             confluence_base_url (str): The base URL for the Confluence API.
             confluence_api_token (str): The API token for authentication.
@@ -47,15 +49,15 @@ class ConfluenceIndexer:
         self.model_embed = embedding_model
         self.text_processor = text_processor
         self.hybrid_index = hybrid_index
+        self.saved_spaces_name = {}
         # Store configuration parameters as instance attributes
         self.ROOT_PAGE_ID = root_page_id
         self.COLLECTION_NAME = collection_name
-        self.SPACE_KEY = space_key
         self.EMBEDDING_SIZE = embedding_size
         self.CONFLUENCE_BASE_URL = confluence_base_url
         self.CONFLUENCE_API_TOKEN = confluence_api_token
 
-    def _fetch_children(self, page_id: int, limit: int = 100) -> List[Dict]:
+    async def _fetch_children_async(self, session: aiohttp.ClientSession, page_id: int, limit: int = 100) -> List[Dict]:
         """
         Fetches the child pages of a given Confluence page from the API.
 
@@ -67,26 +69,32 @@ class ConfluenceIndexer:
             List[Dict]: A list of dictionaries, where each dictionary represents a child page.
                         Returns an empty list on failure or no children.
         """
-        url = f"{self.CONFLUENCE_BASE_URL}/content/{page_id}/child/page"
+        url = f"{self.CONFLUENCE_BASE_URL}/rest/api/content/{page_id}/child/page"
         params = {
             "limit": limit,
-            # Expand includes necessary data like body content, version info, and hierarchy
             "expand": "body.storage,version,ancestors,space,metadata.labels"
         }
-
+        headers = {"Authorization": f"Bearer {self.CONFLUENCE_API_TOKEN}"}
         try:
-            r = requests.get(
-                url,
-                headers={"Authorization": f"Bearer {self.CONFLUENCE_API_TOKEN}"},
-                params=params,
-                timeout=30  # Timeout to prevent hanging
-            )
-            r.raise_for_status()  # Raise HTTPError for bad responses (4xx or 5xx)
-            return r.json().get("results", [])
-        except requests.exceptions.RequestException as e:
+            async with session.get(url, params=params, headers=headers, timeout=30) as response:
+                response.raise_for_status()
+                data = await response.json()
+                return data.get("results", [])
+        except Exception as e:
             logger.error(f"Error fetching children for page {page_id}: {e}")
             return []
 
+    async def _fetch_all_children(self, page_ids: list, max_concurrent: int = 10):
+        """
+        Fetch all child pages asynchronously with a concurrency limit.
+        """
+        connector = aiohttp.TCPConnector(limit=max_concurrent)
+        async with aiohttp.ClientSession(connector=connector) as session:
+            tasks = [self._fetch_children_async(session, pid) for pid in page_ids]
+            results = await asyncio.gather(*tasks)
+            # Flatten the list of lists
+            return [child for page_children in results for child in page_children]
+        
     @staticmethod
     def _build_page_hierarchy(page_data: Dict) -> List[str]:
         """
@@ -133,7 +141,24 @@ class ConfluenceIndexer:
                 vectors_config=VectorParams(size=self.EMBEDDING_SIZE, distance=Distance.COSINE),
             )
 
-    def index_pages(self, reset: bool = False) -> None:
+    def _get_space_name(self, space_id, space_uri):
+        space_name = self.saved_spaces_name.get(space_id, None)
+        if space_name is None:
+            url = f"{self.CONFLUENCE_BASE_URL}{space_uri}"
+            headers = {"Authorization": f"Bearer {self.CONFLUENCE_API_TOKEN}"}
+            logger.info(f"Running request GET {url}")
+            try:
+                response = requests.get(url, headers=headers)
+                response.raise_for_status()
+                data = response.json()
+            except requests.exceptions.RequestException as e:
+                logger.error(f"Request GET {url} failed: {e}")
+                data = {}
+            space_name = data.get("name", None)
+            self.saved_spaces_name[space_id] = space_name
+        return space_name
+        
+    def index_pages(self, reset: bool = False, max_workers: int = 8, batch_size: int = 500) -> None:
         """
         The main method to start the indexing process.
 
@@ -143,116 +168,134 @@ class ConfluenceIndexer:
         Args:
             reset (bool): If True, the entire Qdrant collection will be wiped and re-indexed.
         """
-        # Step 1: Initialize or reset the Qdrant collection
         self._initialize_collection(reset)
-
-        queue = [self.ROOT_PAGE_ID]  # Use a queue for a breadth-first traversal
+        if not isinstance(self.ROOT_PAGE_ID, list):
+            queue = [self.ROOT_PAGE_ID]
+        else:
+            queue = self.ROOT_PAGE_ID
         visited = set()
-        all_texts = []  # List to collect all chunks for TF-IDF training
-        all_chunk_ids = []
-        
-        # Unpack text processor settings for local access
-        min_chunk_size = self.text_processor.min_chunk_size
-        chunk_size_limit = self.text_processor.chunk_size_limit
-        chunk_size_overlap = self.text_processor.chunk_size_overlap
+        all_texts, all_chunk_ids = [], []
 
-        # Step 2: Traverse the page tree
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
         while queue:
             current_page_id = queue.pop(0)
             if current_page_id in visited:
                 continue
             visited.add(current_page_id)
 
-            logger.info(f"Processing page ID: {current_page_id}")
-            children = self._fetch_children(current_page_id)
+            logger.info(f"Fetching children asynchronously for page ID: {current_page_id}")
+            children = loop.run_until_complete(self._fetch_all_children([current_page_id]))
+
+            # Threaded processing remains the same
             points_to_upsert = []
 
-            for page in children:
+            def process_page(page):
                 page_id = int(page["id"])
                 title = page["title"]
-
-                # We typically skip indexing the content of the root page itself, only its children
-                if current_page_id != self.ROOT_PAGE_ID:
-                    try:
-                        body = page["body"]["storage"]
-                        last_updated = page["version"]["when"]
-                        link = f"https://confluence.sage.com/spaces/{self.SPACE_KEY}/pages/{page_id}"
-                        hierarchy = self._build_page_hierarchy(page)
-
-                        # Check for incremental update
-                        needs_update = self._check_for_update(page_id, last_updated, title)
-
-                        if not needs_update and not reset:
-                            # If page is unchanged and we're not doing a full reset, skip
-                            queue.append(page_id)
-                            continue
-
-                        # Delete old chunks for updated pages to avoid duplicates
-                        if needs_update and not reset:
-                            self._delete_old_chunks(page_id)
-                        
-                        # Process and chunk the text
-                        text = self.text_processor.extract_text_from_storage(body)
-                        text_chunks = self.text_processor.smart_chunk_text(
-                            text, chunk_size_limit, min_chunk_size, chunk_size_overlap
-                        )
-                        
-                        if not text_chunks:
-                            continue
-
-                        # Generate embeddings for all chunks in the page
-                        chunk_embeddings = common.embed_text(self.model_embed, text_chunks)
-
-                        # Create a PointStruct for each chunk
-                        for i, (chunk, embedding) in enumerate(zip(text_chunks, chunk_embeddings)):
-                            chunk_id = f"{page_id}_{i}"
-                            keywords = self.text_processor.extract_keywords(chunk)
-
-                            # Append data for TF-IDF index
-                            all_texts.append(chunk)
-                            all_chunk_ids.append(chunk_id)
-
-                            # Generate a unique point ID using UUID5 for consistency
-                            point_id = str(uuid.uuid5(uuid.NAMESPACE_URL, chunk_id))
-                            points_to_upsert.append(
-                                PointStruct(
-                                    id=point_id,
-                                    vector=embedding,
-                                    payload={
-                                        "title": title,
-                                        "page_id": page_id,
-                                        "chunk_id": chunk_id,
-                                        "text": chunk,
-                                        "keywords": keywords,
-                                        "last_updated": last_updated,
-                                        "link": link,
-                                        "position": i,
-                                        "hierarchy": hierarchy,
-                                        "text_length": len(chunk),
-                                        "space_key": self.SPACE_KEY
-                                    }
-                                )
-                            )
-                        logger.info(f"Prepared {len(text_chunks)} chunks for page: {title}")
-
-                    except Exception as e:
-                        logger.error(f"Error processing page {title}: {e}")
-                        continue
-                else:
+                
+                if current_page_id == self.ROOT_PAGE_ID:
                     logger.info(f"Skipped root page content: {title}")
+                    return [], []
 
-                queue.append(page_id)  # Add the page's children to the queue
+                try:
+                    body = page["body"]["storage"]
+                    last_updated = page["version"]["when"]
+                    space_uri = page.get("_expandable", {}).get("container", "")
+                    space_key = space_uri.split("/")[-1]
+                    space_name = self._get_space_name(space_key, space_uri)
+                    link = f"{self.CONFLUENCE_BASE_URL}/spaces/{space_name}/pages/{page_id}"
+                    hierarchy = self._build_page_hierarchy(page)
 
-            # Step 3: Batch upsert points to Qdrant
-            self._batch_upsert(points_to_upsert)
+                    needs_update = self._check_for_update(page_id, last_updated, title)
+                    if not needs_update and not reset:
+                        queue.append(page_id)
+                        return [], []
 
-        # Step 4: Build or update the TF-IDF index for keyword search
+                    if needs_update and not reset:
+                        self._delete_old_chunks(page_id)
+
+                    text, extracted_table = self.text_processor.extract_text_from_storage(body)
+                    text_chunks = self.text_processor.smart_chunk_text(
+                        text,
+                        extracted_table,
+                        self.text_processor.chunk_size_limit,
+                        self.text_processor.min_chunk_size,
+                        self.text_processor.chunk_size_overlap
+                    )
+
+                    if not text_chunks:
+                        return [], []
+
+                    embeddings = common.embed_text(self.model_embed, [x['text'] for x in text_chunks])
+
+                    page_points = []
+                    tfidf_texts, tfidf_ids = [], []
+
+                    for i, (chunk, emb) in enumerate(zip(text_chunks, embeddings)):
+                        chunk_id = f"{page_id}_{i}"
+                        point_id = str(uuid5(NAMESPACE_URL, chunk_id))
+                        keywords = self.text_processor.extract_keywords(chunk['text'])
+
+                        page_points.append(
+                            PointStruct(
+                                id=point_id,
+                                vector=emb,
+                                payload={
+                                    "title": title,
+                                    "page_id": page_id,
+                                    "tables": chunk['tables'],
+                                    "space_name": space_name,
+                                    "chunk_id": chunk_id,
+                                    "text": chunk['text'],
+                                    "keywords": keywords,
+                                    "last_updated": last_updated,
+                                    "link": link,
+                                    "position": i,
+                                    "hierarchy": hierarchy,
+                                    "text_length": len(chunk['text']),
+                                    "space_key": space_key
+                                }
+                            )
+                        )
+
+                        tfidf_texts.append(chunk['text'])
+                        tfidf_ids.append(chunk_id)
+
+                    return page_points, (tfidf_texts, tfidf_ids)
+
+                except Exception as e:
+                    logger.error(f"Error processing page {title}: {e}")
+                    return [], []
+
+            # ThreadPoolExecutor for page processing
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                futures = [executor.submit(process_page, page) for page in children]
+                for future in as_completed(futures):
+                    page_points, tfidf_data = future.result()
+                    if page_points:
+                        points_to_upsert.extend(page_points)
+                    if tfidf_data:
+                        texts, ids = tfidf_data
+                        all_texts.extend(texts)
+                        all_chunk_ids.extend(ids)
+
+            # Batch upsert
+            for i in range(0, len(points_to_upsert), batch_size):
+                batch = points_to_upsert[i:i + batch_size]
+                self._batch_upsert(batch)
+
+            # Add child pages to queue
+            for page in children:
+                queue.append(int(page["id"]))
+
+        # TF-IDF rebuild
         if all_texts and reset:
             logger.info("Building TF-IDF index for keyword search...")
             self.hybrid_index.fit_tfidf(all_texts, all_chunk_ids)
-            
         elif not reset:
-             logger.info("No TF-IDF rebuild requested. Using existing index.")
+            logger.info("No TF-IDF rebuild requested. Using existing index.")
 
     def _check_for_update(self, page_id: int, last_updated: str, title: str) -> bool:
         """

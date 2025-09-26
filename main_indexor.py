@@ -7,7 +7,7 @@ from sentence_transformers import SentenceTransformer
 # Import custom modules
 from config.logging_config import logger
 from config.settings import CONFLUENCE_ROOT_PAGE_ID, CHUNK_SIZE_LIMIT, MIN_CHUNK_SIZE, \
-    CHUNK_OVERLAP, COLLECTION_NAME, SPACE_KEY, EMBEDDING_SIZE, CONFLUENCE_BASE_URL, CONFLUENCE_API_TOKEN, \
+    CHUNK_OVERLAP, COLLECTION_NAME, EMBEDDING_SIZE, CONFLUENCE_BASE_URL, CONFLUENCE_API_TOKEN, \
     SENTENCE_TRANSFORMER
 from indexer.confluence_indexer import ConfluenceIndexer
 from indexer.hybrid_index import HybridSearchIndex
@@ -44,7 +44,7 @@ def main():
     text_processor = EnhancedTextProcessor(CHUNK_SIZE_LIMIT, MIN_CHUNK_SIZE, CHUNK_OVERLAP)
     
     logger.info(f"Indexing Confluence from root page ID: {CONFLUENCE_ROOT_PAGE_ID}")
-    logger.info(f"Collection: {COLLECTION_NAME} | Space: {SPACE_KEY} | Reset: {RESET_INDEXOR}")
+    logger.info(f"Collection: {COLLECTION_NAME} | Reset: {RESET_INDEXOR}")
     
     # 5. Initialize and run the Confluence Indexer
     confluence_indexer = ConfluenceIndexer(
@@ -54,7 +54,6 @@ def main():
         hybrid_index=hybrid_search_index, 
         root_page_id=CONFLUENCE_ROOT_PAGE_ID, 
         collection_name=COLLECTION_NAME, 
-        space_key=SPACE_KEY, 
         embedding_size=EMBEDDING_SIZE, 
         confluence_base_url=CONFLUENCE_BASE_URL, 
         confluence_api_token=CONFLUENCE_API_TOKEN

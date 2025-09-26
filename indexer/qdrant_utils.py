@@ -19,16 +19,31 @@ def start_qdrant():
         subprocess.CalledProcessError: If the Docker command fails (e.g., Docker service is not running).
     """
     logger.info("Attempting to start Qdrant Docker container...")
+    
     try:
-        # Command to run Qdrant container
-        subprocess.run(
-            ["docker", "run", "-d", "--name", "qdrant", "-p", "6333:6333", "qdrant/qdrant"],
-            check=True  # Raise an error if the command fails
+        # Check if container already exists
+        result = subprocess.run(
+            ["docker", "ps", "-a", "-q", "-f", "name=qdrant"],
+            capture_output=True, text=True
         )
-        logger.info("Qdrant container started successfully. Waiting for it to become available...")
-    except subprocess.CalledProcessError as e:
-        logger.error(f"Failed to start Qdrant container: {e}. Is Docker running?")
-        raise
+        container_id = result.stdout.strip()
+        
+        if container_id:
+            # If exists but stopped, start it
+            subprocess.run(["docker", "start", container_id], check=True)
+            print(f"Started existing Qdrant container: {container_id}")
+            return
+    except subprocess.CalledProcessError:    
+        try:
+            # Command to run Qdrant container
+            subprocess.run(
+                ["docker", "run", "-d", "--name", "qdrant", "-p", "6333:6333", "qdrant/qdrant"],
+                check=True  # Raise an error if the command fails
+            )
+            logger.info("Qdrant container started successfully. Waiting for it to become available...")
+        except subprocess.CalledProcessError as e:
+            logger.error(f"Failed to start Qdrant container: {e}. Is Docker running?")
+            raise
 
 
 def check_and_start_qdrant(timeout: int = 60, retry_delay: int = 5) -> QdrantClient:

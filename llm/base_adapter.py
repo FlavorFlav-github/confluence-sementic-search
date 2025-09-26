@@ -29,7 +29,9 @@ class LLMAdapter(ABC):
         - Answer based ONLY on the provided context
         - Be concise but comprehensive
         - If information is missing, say so clearly
-        - Use bullet points or numbered lists when appropriate"""
+        - Use bullet points or numbered lists when appropriate
+        - Use markdown table if necessary
+        - Use markdown code snippet if necessary"""
 
     @abstractmethod
     def setup(self) -> bool:

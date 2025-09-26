@@ -2,7 +2,7 @@
 Data models and schemas for the search application.
 """
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import List, Optional, Dict
 
 @dataclass
 class SearchResult:
@@ -10,6 +10,7 @@ class SearchResult:
     page_id: int
     title: str
     text: str
+    tables: List[Dict[str, List[List[str]]]]
     score: float
     semantic_score: float
     keyword_score: float

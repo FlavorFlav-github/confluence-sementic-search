@@ -134,7 +134,7 @@ class OllamaModelAdapter(LLMAdapter):
             "model": self.model_name,
             "prompt": prompt,
             "stream": False,  # Request the full response at once
-            "options": {"temperature": 0.2, "num_predict": 500}  # Example generation options
+            "options": {"temperature": 0.2, "num_predict": 500}
         }
         
         response = requests.post(
@@ -205,7 +205,7 @@ class OllamaModelAdapter(LLMAdapter):
         context_pieces = []
         for i, result in enumerate(enriched_results, 1):
             context_pieces.append(
-                {'text': f"[Source {i} - {result.title}]\n{result.text.strip()}",
+                {'text': f"[Source {i} - Page title : {result.title}]\nPage link : {result.link}\nPage extract : {result.text.strip()}\nPage tables content (optionnal): {result.tables}",
                  'title': result.title,
                  'link': result.link,
                  'score': result.score}

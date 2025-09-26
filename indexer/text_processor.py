@@ -1,4 +1,5 @@
 import re
+from uuid import uuid4
 from collections import defaultdict
 from typing import List
 
@@ -6,7 +7,7 @@ import nltk
 from bs4 import BeautifulSoup
 # Import NLTK components for natural language processing tasks
 from nltk import WordNetLemmatizer, sent_tokenize
-from nltk.corpus import stopwords
+from nltk.corpus import stopwords, wordnet
 
 # --- NLTK Data Check and Download ---
 # This block ensures all necessary NLTK data files (for tokenization, stop words, and lemmatization)
@@ -23,6 +24,8 @@ except LookupError:
     nltk.download('stopwords')
     # WordNet is used for lemmatization
     nltk.download('wordnet')
+_ = stopwords.words('english')
+_ = wordnet.synsets('example')
 
 class EnhancedTextProcessor:
     """
@@ -72,13 +75,27 @@ class EnhancedTextProcessor:
         for script in soup(["script", "style"]):
             script.decompose()
 
-        # Get text, using a space separator for better word separation after tag removal
+        tables_data = {}
+        for table in soup.find_all("table"):
+            table_id = str(uuid4())
+            headers = [th.get_text(strip=True) for th in table.find_all("th")]
+            rows = []
+            for tr in table.find_all("tr"):
+                cells = [td.get_text(strip=True) for td in tr.find_all("td")]
+                if cells:
+                    rows.append(cells)
+
+            # Save structured form
+            tables_data[table_id] = {"headers": headers, "rows": rows}
+
+            # Replace table with a placeholder marker
+            table.replace_with(f" [[TABLE_ID:{table_id}]] ")
+
+        # Now the text has placeholders
         text = soup.get_text(separator=" ", strip=True)
+        text = re.sub(r"\s+", " ", text)
 
-        # Clean up any excessive internal whitespace resulting from HTML tags
-        text = re.sub(r'\s+', ' ', text)
-
-        return text
+        return text, tables_data
 
     def extract_keywords(self, text: str, top_k: int = 10) -> List[str]:
         """
@@ -114,60 +131,35 @@ class EnhancedTextProcessor:
         # Return the top K most frequent unique words
         return sorted(word_freq.keys(), key=word_freq.get, reverse=True)[:top_k]
 
-    def smart_chunk_text(self, text: str, max_chars: int,
-                         min_chunk: int, overlap: int) -> List[str]:
-        """
-        Divides the document text into smaller, semantically coherent chunks based on sentence boundaries.
-
-        This method attempts to prevent splitting a sentence across two chunks and implements overlapping context.
-
-        Args:
-            text (str): The full document text.
-            max_chars (int): Maximum character length for a chunk.
-            min_chunk (int): Minimum character length for a valid chunk.
-            overlap (int): The number of characters to use for overlap between chunks.
-
-        Returns:
-            List[str]: A list of cleaned, sentence-aligned text chunks.
-        """
-        # Base case: if text is small enough, return it as a single chunk (if above min size)
-        if len(text) <= max_chars:
-            return [text] if len(text) >= min_chunk else []
-
-        # Use NLTK's `sent_tokenize` to reliably split text into sentences
+    def smart_chunk_text(self, text, tables_data, max_chars=500, min_chunk=50, overlap=50):
         sentences = sent_tokenize(text)
         chunks = []
         current_chunk = ""
 
         for sentence in sentences:
-            # Check if adding the current sentence would push the chunk over the max size limit
             if len(current_chunk) + len(sentence) + 1 > max_chars and current_chunk:
-                # If the current chunk is substantial enough, finalize and save it
                 if len(current_chunk) >= min_chunk:
                     chunks.append(current_chunk.strip())
-
-                # Prepare for the next chunk with overlap
-                if overlap > 0 and len(current_chunk) > overlap:
-                    # Get the last part of the current chunk for overlap
-                    overlap_text = current_chunk[-overlap:]
-                    
-                    # Attempt to find a sentence boundary (e.g., a period) within the overlap text
-                    # to ensure the overlap starts at the beginning of a sentence, if possible.
-                    last_period = overlap_text.rfind('.')
-                    if last_period > overlap // 2:  # Only use the period if it's near the end of the overlap text
-                        overlap_text = overlap_text[last_period + 1:].strip()
-                    
-                    # Start the new chunk with the cleaned overlap text + the current sentence
-                    current_chunk = overlap_text + " " + sentence
-                else:
-                    # If no meaningful overlap can be created, just start with the new sentence
-                    current_chunk = sentence
+                current_chunk = sentence
             else:
-                # Accumulate the sentence to the current chunk
                 current_chunk += " " + sentence if current_chunk else sentence
 
-        # Add the final chunk if it meets the minimum size requirement
         if current_chunk and len(current_chunk) >= min_chunk:
             chunks.append(current_chunk.strip())
 
-        return chunks
+        # Attach tables to chunks
+        chunk_objects = []
+        for ch in chunks:
+            # Find all table IDs in this chunk
+            table_ids = re.findall(r"\[\[TABLE_ID:(.*?)\]\]", ch)
+            chunk_tables = [tables_data[tid] for tid in table_ids if tid in tables_data]
+
+            # Remove markers from text for embeddings
+            clean_text = re.sub(r"\[\[TABLE_ID:.*?\]\]", "[TABLE]", ch)
+
+            chunk_objects.append({
+                "text": clean_text,
+                "tables": chunk_tables
+            })
+
+        return chunk_objects
