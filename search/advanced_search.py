@@ -120,6 +120,7 @@ class AdvancedSearch:
                     page_id=r.payload['page_id'],
                     title=r.payload['title'],
                     text=r.payload['text'],
+                    tables=r.payload['tables'],
                     score=r.score,
                     semantic_score=r.score,
                     keyword_score=0.0,  # Semantic search only, keyword score is zero
@@ -151,6 +152,7 @@ class AdvancedSearch:
                     page_id=page_id,
                     title=base.title,
                     text=base.text,
+                    tables=base.tables,
                     score=combined_score,  # Use the custom combined score for ranking
                     semantic_score=avg_score,
                     keyword_score=0.0,
@@ -221,6 +223,7 @@ class AdvancedSearch:
                     page_id=h.payload['page_id'],
                     title=h.payload['title'],
                     text=h.payload['text'],
+                    tables=h.payload['tables'],
                     score=result.score * 0.9,  # Apply a minor penalty to the score
                     semantic_score=result.score,
                     keyword_score=0.0,
@@ -274,6 +277,7 @@ class AdvancedSearch:
                 page_id=result.page_id,
                 title=result.title,
                 text=result.text,
+                tables=result.tables,
                 score=alpha * result.semantic_score,  # Initial score is only semantic part
                 semantic_score=result.semantic_score,
                 keyword_score=0.0,

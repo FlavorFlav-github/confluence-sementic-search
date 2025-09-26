@@ -1,4 +1,4 @@
-import uuid
+from uuid import uuid5, NAMESPACE_URL
 from typing import List, Dict
 import asyncio
 import aiohttp
@@ -29,7 +29,7 @@ class ConfluenceIndexer:
 
     def __init__(self, qdrant_client: QdrantClient, embedding_model: SentenceTransformer,
                  text_processor: EnhancedTextProcessor, hybrid_index: HybridSearchIndex,
-                 root_page_id: int, collection_name: str, space_key: str,
+                 root_page_id: int, collection_name: str,
                  embedding_size: int, confluence_base_url: str, confluence_api_token: str):
         """
         Initializes the indexer with all required dependencies and configuration.
@@ -41,7 +41,6 @@ class ConfluenceIndexer:
             hybrid_index (HybridSearchIndex): The keyword-based index for hybrid search.
             root_page_id (int): The starting page ID for recursive indexing.
             collection_name (str): The name of the Qdrant collection.
-            space_key (str): The Confluence space key.
             embedding_size (int): The dimension of the vector embeddings.
             confluence_base_url (str): The base URL for the Confluence API.
             confluence_api_token (str): The API token for authentication.
@@ -50,10 +49,10 @@ class ConfluenceIndexer:
         self.model_embed = embedding_model
         self.text_processor = text_processor
         self.hybrid_index = hybrid_index
+        self.saved_spaces_name = {}
         # Store configuration parameters as instance attributes
         self.ROOT_PAGE_ID = root_page_id
         self.COLLECTION_NAME = collection_name
-        self.SPACE_KEY = space_key
         self.EMBEDDING_SIZE = embedding_size
         self.CONFLUENCE_BASE_URL = confluence_base_url
         self.CONFLUENCE_API_TOKEN = confluence_api_token
@@ -70,7 +69,7 @@ class ConfluenceIndexer:
             List[Dict]: A list of dictionaries, where each dictionary represents a child page.
                         Returns an empty list on failure or no children.
         """
-        url = f"{self.CONFLUENCE_BASE_URL}/content/{page_id}/child/page"
+        url = f"{self.CONFLUENCE_BASE_URL}/rest/api/content/{page_id}/child/page"
         params = {
             "limit": limit,
             "expand": "body.storage,version,ancestors,space,metadata.labels"
@@ -142,6 +141,23 @@ class ConfluenceIndexer:
                 vectors_config=VectorParams(size=self.EMBEDDING_SIZE, distance=Distance.COSINE),
             )
 
+    def _get_space_name(self, space_id, space_uri):
+        space_name = self.saved_spaces_name.get(space_id, None)
+        if space_name is None:
+            url = f"{self.CONFLUENCE_BASE_URL}{space_uri}"
+            headers = {"Authorization": f"Bearer {self.CONFLUENCE_API_TOKEN}"}
+            logger.info(f"Running request GET {url}")
+            try:
+                response = requests.get(url, headers=headers)
+                response.raise_for_status()
+                data = response.json()
+            except requests.exceptions.RequestException as e:
+                logger.error(f"Request GET {url} failed: {e}")
+                data = {}
+            space_name = data.get("name", None)
+            self.saved_spaces_name[space_id] = space_name
+        return space_name
+        
     def index_pages(self, reset: bool = False, max_workers: int = 8, batch_size: int = 500) -> None:
         """
         The main method to start the indexing process.
@@ -153,7 +169,10 @@ class ConfluenceIndexer:
             reset (bool): If True, the entire Qdrant collection will be wiped and re-indexed.
         """
         self._initialize_collection(reset)
-        queue = [self.ROOT_PAGE_ID]
+        if not isinstance(self.ROOT_PAGE_ID, list):
+            queue = [self.ROOT_PAGE_ID]
+        else:
+            queue = self.ROOT_PAGE_ID
         visited = set()
         all_texts, all_chunk_ids = [], []
 
@@ -175,7 +194,7 @@ class ConfluenceIndexer:
             def process_page(page):
                 page_id = int(page["id"])
                 title = page["title"]
-
+                
                 if current_page_id == self.ROOT_PAGE_ID:
                     logger.info(f"Skipped root page content: {title}")
                     return [], []
@@ -183,7 +202,10 @@ class ConfluenceIndexer:
                 try:
                     body = page["body"]["storage"]
                     last_updated = page["version"]["when"]
-                    link = f"https://confluence.sage.com/spaces/{self.SPACE_KEY}/pages/{page_id}"
+                    space_uri = page.get("_expandable", {}).get("container", "")
+                    space_key = space_uri.split("/")[-1]
+                    space_name = self._get_space_name(space_key, space_uri)
+                    link = f"{self.CONFLUENCE_BASE_URL}/spaces/{space_name}/pages/{page_id}"
                     hierarchy = self._build_page_hierarchy(page)
 
                     needs_update = self._check_for_update(page_id, last_updated, title)
@@ -194,9 +216,10 @@ class ConfluenceIndexer:
                     if needs_update and not reset:
                         self._delete_old_chunks(page_id)
 
-                    text = self.text_processor.extract_text_from_storage(body)
+                    text, extracted_table = self.text_processor.extract_text_from_storage(body)
                     text_chunks = self.text_processor.smart_chunk_text(
                         text,
+                        extracted_table,
                         self.text_processor.chunk_size_limit,
                         self.text_processor.min_chunk_size,
                         self.text_processor.chunk_size_overlap
@@ -205,15 +228,15 @@ class ConfluenceIndexer:
                     if not text_chunks:
                         return [], []
 
-                    embeddings = common.embed_text(self.model_embed, text_chunks)
+                    embeddings = common.embed_text(self.model_embed, [x['text'] for x in text_chunks])
 
                     page_points = []
                     tfidf_texts, tfidf_ids = [], []
 
                     for i, (chunk, emb) in enumerate(zip(text_chunks, embeddings)):
                         chunk_id = f"{page_id}_{i}"
-                        point_id = str(uuid.uuid5(uuid.NAMESPACE_URL, chunk_id))
-                        keywords = self.text_processor.extract_keywords(chunk)
+                        point_id = str(uuid5(NAMESPACE_URL, chunk_id))
+                        keywords = self.text_processor.extract_keywords(chunk['text'])
 
                         page_points.append(
                             PointStruct(
@@ -222,20 +245,22 @@ class ConfluenceIndexer:
                                 payload={
                                     "title": title,
                                     "page_id": page_id,
+                                    "tables": chunk['tables'],
+                                    "space_name": space_name,
                                     "chunk_id": chunk_id,
-                                    "text": chunk,
+                                    "text": chunk['text'],
                                     "keywords": keywords,
                                     "last_updated": last_updated,
                                     "link": link,
                                     "position": i,
                                     "hierarchy": hierarchy,
-                                    "text_length": len(chunk),
-                                    "space_key": self.SPACE_KEY
+                                    "text_length": len(chunk['text']),
+                                    "space_key": space_key
                                 }
                             )
                         )
 
-                        tfidf_texts.append(chunk)
+                        tfidf_texts.append(chunk['text'])
                         tfidf_ids.append(chunk_id)
 
                     return page_points, (tfidf_texts, tfidf_ids)

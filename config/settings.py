@@ -7,7 +7,7 @@ os.environ['PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION'] = 'python'
 # -------------------------
 CONFLUENCE_BASE_URL = os.getenv("CONFLUENCE_BASE_URL")
 CONFLUENCE_API_TOKEN = os.getenv("CONFLUENCE_API_TOKEN")
-CONFLUENCE_ROOT_PAGE_ID = os.getenv("CONFLUENCE_ROOT_PAGE_ID")
+CONFLUENCE_ROOT_PAGE_ID = os.getenv("CONFLUENCE_ROOT_PAGE_ID", "").split(",")
 SPACE_KEY = os.getenv("SPACE_KEY")
 
 QDRANT_URL = "http://localhost:6333"
@@ -26,6 +26,7 @@ ENRICH_WITH_NEIGHBORS = 1
 # Search configuration
 DEFAULT_TOP_K = 10
 RERANK_TOP_K = 20
+SOURCE_SELECTION = 5
 HYBRID_ALPHA = 0.7  # Weight for semantic vs keyword search (0.7 = 70% semantic, 30% keyword)
 
 LLM_BACKEND_TYPE="ollama"

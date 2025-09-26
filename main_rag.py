@@ -4,7 +4,7 @@ Initializes all components and runs the indexing and search pipelines.
 """
 # Import custom modules
 from config.logging_config import logger
-from config.settings import LLM_MODEL, LLM_BACKEND_TYPE
+from config.settings import LLM_MODEL, LLM_BACKEND_TYPE, SOURCE_SELECTION
 from indexer.hybrid_index import HybridSearchIndex
 from indexer.qdrant_utils import check_and_start_qdrant
 from llm.bridge import LocalLLMBridge
@@ -46,7 +46,7 @@ def main():
         model_key=LLM_MODEL,
         backend_type=LLM_BACKEND_TYPE
     )
-
+    
     # 5. Setup the LLM model (e.g., download model weights, initialize framework)
     try:
         rag_system.setup_model()
@@ -80,7 +80,7 @@ def main():
         if question:
             try:
                 # Perform RAG query
-                result = rag_system.ask(question)
+                result = rag_system.ask(question, top_k=SOURCE_SELECTION)
                 
                 # Print LLM Answer
                 print(f"\n🤖 {result.get('answer', 'Sorry, I could not generate an answer.')}")
