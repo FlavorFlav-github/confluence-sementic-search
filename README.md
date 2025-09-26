@@ -30,6 +30,17 @@ This is intended as an open project, designed for teams or individuals who want 
 
 - 🛠️ Extensible design: add new embeddings, vector DBs, or LLMs with minimal changes.
 
+## 🔧 Project Architecture
+```mermaid
+flowchart LR
+    A[Confluence API] -->|Fetch Pages| B[Chunking & Embeddings]
+    B -->|Store Vectors| C[(Qdrant Vector DB)]
+    D[User Query] -->|Embed Query| B
+    D -->|Send Query| C
+    C -->|Retrieve Matches| E[Context Builder]
+    E -->|Assemble Prompt| F[(LLM - Ollama / other)]
+    F -->|Answer with Sources| G[User]
+```
 ## 🚀 Installation Guide
 ### 1. Prerequisites
 
