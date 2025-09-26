@@ -3,6 +3,7 @@ from typing import List, Dict
 
 import requests
 from qdrant_client import QdrantClient
+# Import Qdrant models for defining collection properties and points
 from qdrant_client.models import PointStruct, VectorParams, Distance, Filter, FieldCondition
 from qdrant_client.http.models import MatchValue
 from sentence_transformers import SentenceTransformer
@@ -16,18 +17,37 @@ from indexer.text_processor import EnhancedTextProcessor
 
 class ConfluenceIndexer:
     """
-    A class to manage the entire Confluence indexing pipeline,
-    including API fetching, text embedding, and Qdrant indexing.
+    A comprehensive class to manage the entire indexing pipeline for Confluence documentation.
+
+    This class handles fetching content from the Confluence API, processing the text,
+    generating vector embeddings and keyword data, and upserting the data into a
+    Qdrant vector database. It supports full re-indexing and incremental updates.
     """
+
     def __init__(self, qdrant_client: QdrantClient, embedding_model: SentenceTransformer,
                  text_processor: EnhancedTextProcessor, hybrid_index: HybridSearchIndex,
                  root_page_id: int, collection_name: str, space_key: str,
                  embedding_size: int, confluence_base_url: str, confluence_api_token: str):
+        """
+        Initializes the indexer with all required dependencies and configuration.
 
+        Args:
+            qdrant_client (QdrantClient): The Qdrant client instance for database operations.
+            embedding_model (SentenceTransformer): The model for generating vector embeddings.
+            text_processor (EnhancedTextProcessor): The utility for cleaning and chunking text.
+            hybrid_index (HybridSearchIndex): The keyword-based index for hybrid search.
+            root_page_id (int): The starting page ID for recursive indexing.
+            collection_name (str): The name of the Qdrant collection.
+            space_key (str): The Confluence space key.
+            embedding_size (int): The dimension of the vector embeddings.
+            confluence_base_url (str): The base URL for the Confluence API.
+            confluence_api_token (str): The API token for authentication.
+        """
         self.qdrant = qdrant_client
         self.model_embed = embedding_model
         self.text_processor = text_processor
         self.hybrid_index = hybrid_index
+        # Store configuration parameters as instance attributes
         self.ROOT_PAGE_ID = root_page_id
         self.COLLECTION_NAME = collection_name
         self.SPACE_KEY = space_key
@@ -36,10 +56,21 @@ class ConfluenceIndexer:
         self.CONFLUENCE_API_TOKEN = confluence_api_token
 
     def _fetch_children(self, page_id: int, limit: int = 100) -> List[Dict]:
-        """Enhanced API fetching with better error handling."""
+        """
+        Fetches the child pages of a given Confluence page from the API.
+
+        Args:
+            page_id (int): The ID of the parent page.
+            limit (int): The number of child pages to retrieve in one API call.
+
+        Returns:
+            List[Dict]: A list of dictionaries, where each dictionary represents a child page.
+                        Returns an empty list on failure or no children.
+        """
         url = f"{self.CONFLUENCE_BASE_URL}/content/{page_id}/child/page"
         params = {
             "limit": limit,
+            # Expand includes necessary data like body content, version info, and hierarchy
             "expand": "body.storage,version,ancestors,space,metadata.labels"
         }
 
@@ -48,9 +79,9 @@ class ConfluenceIndexer:
                 url,
                 headers={"Authorization": f"Bearer {self.CONFLUENCE_API_TOKEN}"},
                 params=params,
-                timeout=30
+                timeout=30  # Timeout to prevent hanging
             )
-            r.raise_for_status()
+            r.raise_for_status()  # Raise HTTPError for bad responses (4xx or 5xx)
             return r.json().get("results", [])
         except requests.exceptions.RequestException as e:
             logger.error(f"Error fetching children for page {page_id}: {e}")
@@ -58,27 +89,44 @@ class ConfluenceIndexer:
 
     @staticmethod
     def _build_page_hierarchy(page_data: Dict) -> List[str]:
-        """Build hierarchical path for a page."""
+        """
+        Constructs a list representing the hierarchical path of a Confluence page.
+
+        Args:
+            page_data (Dict): The dictionary containing page information from the API.
+
+        Returns:
+            List[str]: A list of page titles from the root down to the current page.
+        """
         hierarchy = []
         if 'ancestors' in page_data:
+            # Ancestors are returned in reverse order (closest first), so we reverse to get root-first
             for ancestor in page_data['ancestors']:
                 hierarchy.append(ancestor['title'])
         hierarchy.append(page_data['title'])
         return hierarchy
 
     def _initialize_collection(self, reset: bool) -> None:
-        """Handles collection creation and optional reset."""
+        """
+        Manages the Qdrant collection. Creates it if it doesn't exist, and deletes it first if `reset` is True.
+
+        Args:
+            reset (bool): If True, the collection will be deleted and recreated.
+        """
         if reset:
             logger.info(f"Deleting collection: {self.COLLECTION_NAME}")
             try:
                 self.qdrant.delete_collection(collection_name=self.COLLECTION_NAME)
             except Exception:
+                # Ignore errors if the collection does not exist
                 pass
 
         try:
+            # Check if the collection already exists
             self.qdrant.get_collection(self.COLLECTION_NAME)
             logger.info(f"Collection {self.COLLECTION_NAME} already exists")
         except Exception:
+            # If not, create a new collection with specified vector parameters
             logger.info(f"Creating Qdrant collection {self.COLLECTION_NAME}")
             self.qdrant.create_collection(
                 collection_name=self.COLLECTION_NAME,
@@ -86,17 +134,29 @@ class ConfluenceIndexer:
             )
 
     def index_pages(self, reset: bool = False) -> None:
-        """Enhanced indexing with hierarchical structure and metadata."""
+        """
+        The main method to start the indexing process.
+
+        It performs a breadth-first traversal of the Confluence page tree, processes each page,
+        and upserts the resulting chunks into Qdrant. It also manages the TF-IDF index.
+
+        Args:
+            reset (bool): If True, the entire Qdrant collection will be wiped and re-indexed.
+        """
+        # Step 1: Initialize or reset the Qdrant collection
         self._initialize_collection(reset)
 
-        queue = [self.ROOT_PAGE_ID]
+        queue = [self.ROOT_PAGE_ID]  # Use a queue for a breadth-first traversal
         visited = set()
-        all_texts = []
+        all_texts = []  # List to collect all chunks for TF-IDF training
         all_chunk_ids = []
+        
+        # Unpack text processor settings for local access
         min_chunk_size = self.text_processor.min_chunk_size
         chunk_size_limit = self.text_processor.chunk_size_limit
         chunk_size_overlap = self.text_processor.chunk_size_overlap
 
+        # Step 2: Traverse the page tree
         while queue:
             current_page_id = queue.pop(0)
             if current_page_id in visited:
@@ -111,7 +171,7 @@ class ConfluenceIndexer:
                 page_id = int(page["id"])
                 title = page["title"]
 
-                # Skip root page content but process its children
+                # We typically skip indexing the content of the root page itself, only its children
                 if current_page_id != self.ROOT_PAGE_ID:
                     try:
                         body = page["body"]["storage"]
@@ -119,38 +179,40 @@ class ConfluenceIndexer:
                         link = f"https://confluence.sage.com/spaces/{self.SPACE_KEY}/pages/{page_id}"
                         hierarchy = self._build_page_hierarchy(page)
 
-                        # Extract and process text
-                        text = self.text_processor.extract_text_from_storage(body)
-                        if not text or len(text) < settings.MIN_CHUNK_SIZE:
-                            continue
-
-                        # Check if page needs updating
+                        # Check for incremental update
                         needs_update = self._check_for_update(page_id, last_updated, title)
 
-                        if not needs_update:
+                        if not needs_update and not reset:
+                            # If page is unchanged and we're not doing a full reset, skip
                             queue.append(page_id)
                             continue
 
-                        # Delete old chunks if page is being re-indexed
-                        if needs_update:
+                        # Delete old chunks for updated pages to avoid duplicates
+                        if needs_update and not reset:
                             self._delete_old_chunks(page_id)
-
-                        # Enhanced chunking
-                        text_chunks = self.text_processor.smart_chunk_text(text, chunk_size_limit, min_chunk_size, chunk_size_overlap)
+                        
+                        # Process and chunk the text
+                        text = self.text_processor.extract_text_from_storage(body)
+                        text_chunks = self.text_processor.smart_chunk_text(
+                            text, chunk_size_limit, min_chunk_size, chunk_size_overlap
+                        )
+                        
                         if not text_chunks:
                             continue
 
-                        # Embed chunks
+                        # Generate embeddings for all chunks in the page
                         chunk_embeddings = common.embed_text(self.model_embed, text_chunks)
 
+                        # Create a PointStruct for each chunk
                         for i, (chunk, embedding) in enumerate(zip(text_chunks, chunk_embeddings)):
                             chunk_id = f"{page_id}_{i}"
                             keywords = self.text_processor.extract_keywords(chunk)
 
-                            # Store for TF-IDF indexing
+                            # Append data for TF-IDF index
                             all_texts.append(chunk)
                             all_chunk_ids.append(chunk_id)
 
+                            # Generate a unique point ID using UUID5 for consistency
                             point_id = str(uuid.uuid5(uuid.NAMESPACE_URL, chunk_id))
                             points_to_upsert.append(
                                 PointStruct(
@@ -171,7 +233,6 @@ class ConfluenceIndexer:
                                     }
                                 )
                             )
-
                         logger.info(f"Prepared {len(text_chunks)} chunks for page: {title}")
 
                     except Exception as e:
@@ -180,39 +241,60 @@ class ConfluenceIndexer:
                 else:
                     logger.info(f"Skipped root page content: {title}")
 
-                queue.append(page_id)
+                queue.append(page_id)  # Add the page's children to the queue
 
-            # Batch upsert
+            # Step 3: Batch upsert points to Qdrant
             self._batch_upsert(points_to_upsert)
 
-        # Build TF-IDF index for hybrid search
+        # Step 4: Build or update the TF-IDF index for keyword search
         if all_texts and reset:
             logger.info("Building TF-IDF index for keyword search...")
             self.hybrid_index.fit_tfidf(all_texts, all_chunk_ids)
+            
+        elif not reset:
+             logger.info("No TF-IDF rebuild requested. Using existing index.")
 
     def _check_for_update(self, page_id: int, last_updated: str, title: str) -> bool:
-        """Checks if a page has been updated since the last index."""
+        """
+        Checks if a page has been updated by comparing its `last_updated` timestamp in Qdrant.
+
+        Args:
+            page_id (int): The page ID to check.
+            last_updated (str): The new `last_updated` timestamp from the API.
+            title (str): The page title for logging.
+
+        Returns:
+            bool: True if an update is needed (page is new or timestamp differs), False otherwise.
+        """
         try:
+            # Query Qdrant for any point with the given page_id
             existing_points = self.qdrant.scroll(
                 collection_name=self.COLLECTION_NAME,
                 scroll_filter=Filter(
                     must=[FieldCondition(key="page_id", match=MatchValue(value=page_id))]
                 ),
                 limit=1,
-                with_payload=True
+                with_payload=True  # Retrieve the payload to check the timestamp
             )[0]
 
             if existing_points and existing_points[0].payload.get("last_updated") == last_updated:
                 logger.info(f"Skipping unchanged page: {title}")
-                return False  # No update needed
+                return False  # Page is already up-to-date
             else:
-                return True # Update needed (either new or updated)
+                return True # Page is new or has been updated
 
         except Exception:
-            return True # Page not indexed yet
+            # If the scroll operation fails (e.g., page not found), assume it's a new page that needs indexing
+            return True
 
     def _delete_old_chunks(self, page_id: int) -> None:
-        """Deletes all chunks associated with a given page ID."""
+        """
+        Deletes all chunks associated with a specific page ID from Qdrant.
+        This is a necessary step for updating a page's content.
+
+        Args:
+            page_id (int): The ID of the page whose chunks should be deleted.
+        """
         try:
             self.qdrant.delete(
                 collection_name=self.COLLECTION_NAME,
@@ -220,12 +302,17 @@ class ConfluenceIndexer:
                     must=[FieldCondition(key="page_id", match=MatchValue(value=page_id))]
                 )
             )
+            logger.info(f"Deleted old chunks for page {page_id}")
         except Exception as e:
             logger.error(f"Error deleting old chunks for page {page_id}: {e}")
 
-
     def _batch_upsert(self, points_to_upsert: List[PointStruct]) -> None:
-        """Performs a batch upsert to Qdrant."""
+        """
+        Inserts or updates a list of points (chunks) into Qdrant in a single batch operation.
+
+        Args:
+            points_to_upsert (List[PointStruct]): A list of `PointStruct` objects to be upserted.
+        """
         if points_to_upsert:
             try:
                 self.qdrant.upsert(collection_name=self.COLLECTION_NAME, points=points_to_upsert)
