@@ -105,10 +105,10 @@ pip install -r requirements.txt
 
 ## 📖 Usage
 
-#### Run the indexing script to populate Qdrant with Confluence chunks.
+#### Run the main_indexor.py script to populate Qdrant with Confluence chunks.
 
-#### Use the semantic search + LLM script to query your documentation.
+#### Use the main_rag.py script to query your documentation.
 
-🤝 Contributing
+## 🤝 Contributing
 
 Contributions are welcome! Please open an issue or PR.
