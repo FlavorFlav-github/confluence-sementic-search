@@ -32,7 +32,6 @@ class LLMConfig:
                 "ram_needed": "3GB",
                 "best_for": "Conversational, good reasoning"
             },
-            # ... all other ollama models from the original class ...
             "qwen2.5": {
                 "name": "qwen2.5:3b-instruct-q4_K_M",
                 "size": "1.9GB",
@@ -66,7 +65,7 @@ class LLMConfig:
         """Prints a simplified recommendation overview."""
         print("🤖 RECOMMENDED LOCAL LLMs FOR RAG (Ollama):")
         print("=" * 60)
-        # Use existing logic for recommendations (you can expand this with more detailed logic if needed)
+
         print("\n🥇 BEST OVERALL (Recommended):")
         print("   Model: Phi-3.5 Mini (3.8B parameters) - q4_K_M")
         print("   Size: 2.2GB | RAM: 4GB | Speed: Very Fast")
