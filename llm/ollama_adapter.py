@@ -28,7 +28,7 @@ class OllamaModelAdapter(LLMAdapter):
             model_names = [model["name"] for model in models]
 
             # Check if the specific model or a similar one is installed (e.g., llama3.2 in llama3.2:tag)
-            return any(self.model_name.split(':')[0] in name for name in model_names)
+            return any(self.model_name in name for name in model_names)
         except requests.exceptions.RequestException:
             return False
         except Exception:
