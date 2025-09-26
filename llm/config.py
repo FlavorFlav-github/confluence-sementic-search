@@ -1,7 +1,7 @@
 class LLMConfig:
     """Regroups all model configurations and acts as the central model directory."""
 
-    # NOTE: The version ONLY includes 'ollama' models for now, as requested.
+    # NOTE: The version ONLY includes 'ollama' models for now
     RECOMMENDED_MODELS = {
         "ollama": {
             "phi3.5_q4_K_M": {
