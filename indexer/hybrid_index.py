@@ -23,6 +23,7 @@ class HybridSearchIndex:
         self.document_map = {}  # Maps document index to chunk info
         self.is_fitted = False
         self.save_location = 'data/tfidf_model.pkl'
+        os.makedirs(os.path.dirname(self.save_location), exist_ok=True)
 
     def fit_tfidf(self, texts: List[str], chunk_ids: List[str]):
         """Fit TF-IDF on the document corpus."""
