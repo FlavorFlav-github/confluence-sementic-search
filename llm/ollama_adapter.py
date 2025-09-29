@@ -140,7 +140,7 @@ class OllamaModelAdapter(LLMAdapter):
         response = requests.post(
             f"{self.base_url}/api/generate",
             json=payload,
-            timeout=60
+            timeout=self.ask_timeout
         )
         
         if response.status_code == 200:

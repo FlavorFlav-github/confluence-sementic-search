@@ -23,6 +23,7 @@ class LLMAdapter(ABC):
         """
         self.search = search_system  # Stores the search/retrieval system instance
         self.model_name = model_name  # Stores the name of the LLM
+        self.ask_timeout = 90
         # Default system prompt for instructing the LLM, particularly for RAG
         self.system_prompt = """You are a helpful AI assistant that answers questions based on provided documentation.
         INSTRUCTIONS:
