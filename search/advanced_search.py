@@ -55,8 +55,8 @@ class AdvancedSearch:
         query = re.sub(r'\s+', ' ', query.strip())
         return query
 
-    def semantic_search(self, queries: List[str], top_k: int = DEFAULT_TOP_K,
-                        filters: Optional[Dict] = None, final_top_k: int = 3) -> List[SearchResult]:
+    def semantic_search(self, queries: List[str], top_k: int = 10,
+                        filters: Optional[Dict] = None, final_top_k: int = 3, score_threashold: float = 0) -> List[SearchResult]:
         """
         Performs enhanced semantic search using one or more queries.
 
@@ -68,6 +68,7 @@ class AdvancedSearch:
             top_k (int): The number of initial documents to retrieve per query before aggregation.
             filters (Optional[Dict]): Dictionary of criteria to filter Qdrant points (e.g., page_ids, space_key).
             final_top_k (int): The final number of unique SearchResult objects to return after re-ranking.
+            score_threashold (float): Minimum score required for a source to be considered as relevant. (default: 0 = All sources accepted)
 
         Returns:
             List[SearchResult]: A list of aggregated and re-ranked SearchResult objects.
@@ -116,22 +117,23 @@ class AdvancedSearch:
 
             # Convert Qdrant results to SearchResult objects and aggregate
             for r in results:
-                sr = SearchResult(
-                    page_id=r.payload['page_id'],
-                    title=r.payload['title'],
-                    text=r.payload['text'],
-                    tables=r.payload['tables'],
-                    score=r.score,
-                    semantic_score=r.score,
-                    keyword_score=0.0,  # Semantic search only, keyword score is zero
-                    position=r.payload['position'],
-                    link=r.payload['link'],
-                    last_updated=r.payload['last_updated'],
-                    chunk_id=r.payload['chunk_id'],
-                    page_hierarchy=r.payload.get('hierarchy', [])
-                )
-                # Store the result under its page_id
-                aggregated_results[sr.page_id].append(sr)
+                if r.score > score_threashold:
+                    sr = SearchResult(
+                        page_id=r.payload['page_id'],
+                        title=r.payload['title'],
+                        text=r.payload['text'],
+                        tables=r.payload['tables'],
+                        score=r.score,
+                        semantic_score=r.score,
+                        keyword_score=0.0,  # Semantic search only, keyword score is zero
+                        position=r.payload['position'],
+                        link=r.payload['link'],
+                        last_updated=r.payload['last_updated'],
+                        chunk_id=r.payload['chunk_id'],
+                        page_hierarchy=r.payload.get('hierarchy', [])
+                    )
+                    # Store the result under its page_id
+                    aggregated_results[sr.page_id].append(sr)
 
         # --- Result Merging and Reranking ---
         merged_results = []
@@ -236,7 +238,7 @@ class AdvancedSearch:
 
         return adjacent_results
 
-    def hybrid_search(self, query: str, top_k: int = DEFAULT_TOP_K,
+    def hybrid_search(self, query: str, top_k: int = 10, final_top_k: int = 3,
                       alpha: float = HYBRID_ALPHA) -> List[SearchResult]:
         """
         Combines semantic (vector) search and keyword (lexical/sparse) search results.
@@ -245,7 +247,8 @@ class AdvancedSearch:
 
         Args:
             query (str): The user's query string.
-            top_k (int): The number of final results to return after blending and sorting.
+            top_k (int): The number of sources to get from the database
+            final_top_k (int): The number of final results to return after blending and sorting.
             alpha (float): The weighting factor for blending (0.0=keyword only, 1.0=semantic only).
 
         Returns:
@@ -253,7 +256,7 @@ class AdvancedSearch:
         """
         # 1. Get initial semantic search results (using the single query)
         # We use a higher k here (RERANK_TOP_K) to capture a broader initial pool
-        semantic_results = self.semantic_search(queries=[query], top_k=RERANK_TOP_K, final_top_k=RERANK_TOP_K)
+        semantic_results = self.semantic_search(queries=[query], top_k=top_k, final_top_k=final_top_k)
 
         # 2. Get keyword (lexical) search scores
         keyword_results = []

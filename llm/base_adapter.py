@@ -23,6 +23,7 @@ class LLMAdapter(ABC):
         """
         self.search = search_system  # Stores the search/retrieval system instance
         self.model_name = model_name  # Stores the name of the LLM
+        self.is_ready = False
         # Default system prompt for instructing the LLM, particularly for RAG
         self.system_prompt = """You are a helpful AI assistant that answers questions based on provided documentation.
         INSTRUCTIONS:
@@ -47,7 +48,7 @@ class LLMAdapter(ABC):
         pass
 
     @abstractmethod
-    def ask(self, question: str, top_k: int = 3) -> Dict:
+    def ask(self, question: str) -> Dict:
         """
         Abstract method to ask a question, perform RAG, and get an answer.
 
@@ -58,7 +59,6 @@ class LLMAdapter(ABC):
 
         Args:
             question (str): The user's question to be answered.
-            top_k (int): The number of top relevant documents to retrieve for context (default is 3).
 
         Returns:
             Dict: A dictionary containing the answer and potentially other metadata (e.g., retrieved sources).

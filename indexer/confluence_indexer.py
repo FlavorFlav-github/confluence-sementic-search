@@ -205,7 +205,7 @@ class ConfluenceIndexer:
                     space_uri = page.get("_expandable", {}).get("container", "")
                     space_key = space_uri.split("/")[-1]
                     space_name = self._get_space_name(space_key, space_uri)
-                    link = f"{self.CONFLUENCE_BASE_URL}/spaces/{space_name}/pages/{page_id}"
+                    link = f"{self.CONFLUENCE_BASE_URL}/spaces/{space_key}/pages/{page_id}"
                     hierarchy = self._build_page_hierarchy(page)
 
                     needs_update = self._check_for_update(page_id, last_updated, title)

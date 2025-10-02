@@ -47,17 +47,36 @@ class LLMConfig:
                 "best_for": "Resource-constrained environments"
             }
         },
-        # Future models (like 'transformers') are hidden/commented for now,
-        # fulfilling the requirement "the version should only include ollama models for now"
-        # "transformers": {
-        #     "phi3_mini": {
-        #         "name": "microsoft/Phi-3-mini-4k-instruct",
-        #         "size": "7.6GB",
-        #         "description": "Direct Hugging Face integration",
-        #         "ram_needed": "8GB",
-        #         "best_for": "Full control, no external dependencies"
-        #     }
-        # }
+        "gemini": {
+            "flash": {
+                "name": "gemini-2.5-flash",
+                "context_window": "1,048,576 tokens",
+                "latency_priority": "Low Latency / High Throughput",
+                "description": "The best price-performance model. Fast, cost-effective, and capable of handling complex RAG with a 1M token context window.",
+                "best_for": "Large-scale RAG, high-volume tasks, agentic workflows"
+            },
+            "pro": {
+                "name": "gemini-2.5-pro",
+                "context_window": "1,048,576 tokens",
+                "latency_priority": "Standard Latency / High Quality",
+                "description": "Google's most advanced reasoning model, featuring the highest quality output and complex problem-solving capabilities.",
+                "best_for": "Complex reasoning, coding, deep analysis, highest quality RAG"
+            },
+            "flash_lite": {
+                "name": "gemini-2.5-flash-lite",
+                "context_window": "1,048,576 tokens",
+                "latency_priority": "Very Low Latency / Most Cost-Effective",
+                "description": "Optimized for maximum speed and cost-efficiency. A lightweight model suitable for high-frequency or cost-sensitive tasks.",
+                "best_for": "High throughput, cost-conscious applications, simple Q&A"
+            },
+            "flash_1_0": {
+                "name": "gemini-1.0-flash",
+                "context_window": "1,048,576 tokens",
+                "latency_priority": "Standard Latency / Legacy Option",
+                "description": "A previous generation model that offers a stable, general-purpose API option.",
+                "best_for": "Legacy compatibility, general tasks"
+            }
+        }
     }
 
     @classmethod

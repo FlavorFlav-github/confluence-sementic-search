@@ -1,3 +1,5 @@
+# File: llm/ollama_adapter.py
+
 import subprocess
 import time
 from typing import Dict, Any
@@ -15,7 +17,8 @@ class OllamaModelAdapter(LLMAdapter):
 
     This adapter manages the lifecycle of an Ollama model, including
     checking its status, ensuring it is pulled, and handling API
-    interactions for both basic generation and Retrieval-Augmented Generation (RAG).
+    interactions for basic generation. The RAG orchestration logic is 
+    delegated to the LocalLLMBridge.
     """
 
     def __init__(self, search_system: Any, model_name: str, base_url: str = "http://localhost:11434"):
@@ -23,7 +26,7 @@ class OllamaModelAdapter(LLMAdapter):
         Initializes the Ollama adapter.
 
         Args:
-            search_system (Any): The retrieval/search system instance for RAG.
+            search_system (Any): The retrieval/search system instance for RAG (stored but not used by this adapter).
             model_name (str): The specific name of the model to use (e.g., 'llama3:8b').
             base_url (str): The URL where the Ollama server is running (default is local).
         """
@@ -34,7 +37,6 @@ class OllamaModelAdapter(LLMAdapter):
     def check_ollama_status(self) -> bool:
         """
         Checks if the Ollama server is running and if the required model is installed/available.
-
         Returns:
             bool: True if the server is responsive and the model is found, False otherwise.
         """
@@ -62,9 +64,7 @@ class OllamaModelAdapter(LLMAdapter):
     def setup(self) -> bool:
         """
         Sets up the Ollama environment: checks for CLI, starts the server (if necessary), and pulls the model.
-
         This implementation attempts to handle the local setup process for a typical Ollama installation.
-
         Returns:
             bool: True if the model is successfully confirmed ready, False otherwise.
         """
@@ -117,16 +117,23 @@ class OllamaModelAdapter(LLMAdapter):
         self.is_ready = self.check_ollama_status()
         return self.is_ready
 
+    def ask(self, prompt: str) -> str:
+        """
+        Public method for the Bridge to call for direct LLM generation.
+        Delegates to the internal _generate method.
+        """
+        if not self.is_ready:
+            raise RuntimeError(f"Ollama model '{self.model_name}' is not set up or ready.")
+
+        return self._generate(prompt)
+
     def _generate(self, prompt: str) -> str:
         """
-        The core abstract method implementation: sends a prompt to the Ollama /api/generate endpoint.
-
+        Abstract core method implementation: sends a prompt to the Ollama /api/generate endpoint.
         Args:
             prompt (str): The final, formatted prompt to send to the LLM.
-
         Returns:
             str: The raw text response from the model.
-
         Raises:
             Exception: If the API call fails or returns a non-200 status code.
         """
@@ -136,102 +143,15 @@ class OllamaModelAdapter(LLMAdapter):
             "stream": False,  # Request the full response at once
             "options": {"temperature": 0.2, "num_predict": 500}
         }
-        
+
         response = requests.post(
             f"{self.base_url}/api/generate",
             json=payload,
             timeout=60
         )
-        
+
         if response.status_code == 200:
             # Extract and strip the final generated response text
             return response.json()["response"].strip()
         else:
             raise Exception(f"Ollama API Error: HTTP {response.status_code} - {response.text}")
-
-    def ask(self, question: str, top_k: int = 3) -> Dict:
-        """
-        Performs the full RAG process: query refinement, document retrieval, context enrichment, and final generation.
-
-        Args:
-            question (str): The user's original question.
-            top_k (int): The number of initial documents to retrieve.
-
-        Returns:
-            Dict: A dictionary containing the answer, the original question, source documents, and model name.
-
-        Raises:
-            RuntimeError: If the model is not ready (setup was not called or failed).
-        """
-        if not self.is_ready:
-            raise RuntimeError("Ollama model is not set up or ready.")
-
-        # Step 0: Refine query using the local LLM to improve search results
-        try:
-            # Prompt the LLM to generate alternative search queries
-            refine_prompt = f"Rewrite '\"{question}\"' into 3 concise, alternative search queries. Return them as a bullet list, without explanation."
-            refined_output = self._generate(refine_prompt)
-            # Parse the bullet list output into a list of strings
-            refined_queries = [q.strip("-• ").strip() for q in refined_output.splitlines() if q.strip()]
-            refined_queries.insert(0, question)  # Always include the original question
-            logger.info(f"🔍 Refined queries: {refined_queries}")
-        except Exception as e:
-            logger.error(f"Query refinement failed: {e}")
-            refined_queries = [question]  # Fallback to just the original question
-
-        # Step 1: Perform semantic search using the refined queries
-        search_results = self.search.semantic_search(refined_queries, top_k=top_k)
-        if not search_results:
-            return {'question': question, 'answer': "I couldn't find any relevant information.", 'sources': [],
-                    'model_used': self.model_name}
-
-        # Step 2: Context Enrichment - Deduplicate and fetch adjacent chunks (neighbors)
-        enriched_results = []
-        seen = set()
-        for result in search_results:
-            # Add the primary result if not already seen
-            if (result.page_id, result.chunk_id) not in seen:
-                enriched_results.append(result)
-                seen.add((result.page_id, result.chunk_id))
-
-            # Fetch and add adjacent chunks (neighbors) for richer context
-            neighbors = self.search.fetch_adjacent_chunks(result, k=ENRICH_WITH_NEIGHBORS)
-            for n in neighbors:
-                if (n.page_id, n.chunk_id) not in seen:
-                    enriched_results.append(n)
-                    seen.add((n.page_id, n.chunk_id))
-
-        # Step 3: Format Context for the LLM
-        context_pieces = []
-        for i, result in enumerate(enriched_results, 1):
-            context_pieces.append(
-                {'text': f"[Source {i} - Page title : {result.title}]\nPage link : {result.link}\nPage extract : {result.text.strip()}\nPage tables content (optionnal): {result.tables}",
-                 'title': result.title,
-                 'link': result.link,
-                 'score': result.score}
-            )
-
-        # Concatenate all context text pieces
-        context = "\n\n".join([piece['text'] for piece in context_pieces])
-
-        # Combine the system prompt, context, and question for the final LLM prompt
-        final_prompt = f"{self.system_prompt}\n\nDOCUMENTATION:\n{context}\n\nQUESTION: {question}"
-
-        # Step 4: Generate the Final Answer
-        try:
-            print("🤖 Generating answer with local LLM...")
-            # Use the internal generation method to get the answer
-            answer = self._generate(final_prompt)
-        except Exception as e:
-            answer = f"Error generating answer: {str(e)}"
-            logger.error(f"LLM generation error: {e}")
-
-        # Step 5: Format and Return Results
-        return {
-            'question': question,
-            'answer': answer,
-            # Extract only the necessary source details for the final output
-            'sources': [{'title': piece['title'], 'link': piece['link'], 'score': piece['score']} for piece in
-                        context_pieces],
-            'model_used': self.model_name
-        }

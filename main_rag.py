@@ -2,9 +2,11 @@
 Main application file for the Confluence search engine.
 Initializes all components and runs the indexing and search pipelines.
 """
+import os
+
 # Import custom modules
 from config.logging_config import logger
-from config.settings import LLM_MODEL, LLM_BACKEND_TYPE, SOURCE_SELECTION
+from config.settings import LLM_MODEL_REFINE, LLM_MODEL_GENERATION, LLM_BACKEND_TYPE_GENERATION, LLM_BACKEND_TYPE_REFINEMENT, DEFAULT_TOP_K, RERANK_TOP_K, SOURCE_THRESHOLD
 from indexer.hybrid_index import HybridSearchIndex
 from indexer.qdrant_utils import check_and_start_qdrant
 from llm.bridge import LocalLLMBridge
@@ -43,8 +45,10 @@ def main():
     # The bridge connects the search system (retrieval) with the LLM (generation)
     rag_system = LocalLLMBridge(
         search_system=search_system,
-        model_key=LLM_MODEL,
-        backend_type=LLM_BACKEND_TYPE
+        generation_model_key=LLM_MODEL_GENERATION,
+        refinement_model_key=LLM_MODEL_REFINE,
+        generation_model_backend_type=LLM_BACKEND_TYPE_GENERATION,
+        refinement_model_backend_type=LLM_BACKEND_TYPE_REFINEMENT
     )
     
     # 5. Setup the LLM model (e.g., download model weights, initialize framework)
@@ -80,7 +84,7 @@ def main():
         if question:
             try:
                 # Perform RAG query
-                result = rag_system.ask(question, top_k=SOURCE_SELECTION)
+                result = rag_system.ask(question, top_k=DEFAULT_TOP_K, final_top_k=RERANK_TOP_K, score_threshold=SOURCE_THRESHOLD)
                 
                 # Print LLM Answer
                 print(f"\n🤖 {result.get('answer', 'Sorry, I could not generate an answer.')}")
@@ -91,7 +95,7 @@ def main():
                 if sources:
                     for source in sources:
                         # Display source title and search score
-                        print(f"  • {source.get('title', 'N/A')} (Score: {source.get('score', 0.0):.3f})")
+                        print(f"  • {source.get('title', 'N/A')} (Score: {source.get('score', 0.0):.3f}) - {source.get('link', None)}")
                 else:
                     print("  • No relevant sources found.")
                     

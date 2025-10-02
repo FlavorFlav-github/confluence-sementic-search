@@ -9,7 +9,8 @@ from typing import List, Optional
 
 # Import your modules
 from config.logging_config import logger
-from config.settings import LLM_MODEL, LLM_BACKEND_TYPE, SOURCE_SELECTION
+from config.settings import LLM_MODEL_GENERATION, LLM_MODEL_REFINE, \
+    LLM_BACKEND_TYPE_GENERATION, LLM_BACKEND_TYPE_REFINEMENT, DEFAULT_TOP_K, RERANK_TOP_K, SOURCE_THRESHOLD
 from indexer.hybrid_index import HybridSearchIndex
 from indexer.qdrant_utils import check_and_start_qdrant
 from llm.bridge import LocalLLMBridge
@@ -24,7 +25,9 @@ from search.advanced_search import AdvancedSearch
 class QuestionRequest(BaseModel):
     question: str
     model: str
-    top_k: Optional[int] = SOURCE_SELECTION
+    search_top_k: Optional[int] = DEFAULT_TOP_K
+    search_min_score: Optional[float] = SOURCE_THRESHOLD
+    llm_top_k: Optional[int] = RERANK_TOP_K
 
 
 class Source(BaseModel):
@@ -68,15 +71,20 @@ except Exception as e:
 def ask_question(request: QuestionRequest):
     rag_system = LocalLLMBridge(
         search_system=search_system,
-        model_key=request.model,
-        backend_type=LLM_BACKEND_TYPE
+        generation_model_key=LLM_MODEL_GENERATION,
+        refinement_model_key=LLM_MODEL_REFINE,
+        generation_model_backend_type=LLM_BACKEND_TYPE_GENERATION,
+        refinement_model_backend_type=LLM_BACKEND_TYPE_REFINEMENT
     )
     rag_system.setup_model()
     if rag_system is None:
         raise HTTPException(status_code=500, detail="RAG system not initialized")
 
     try:
-        result = rag_system.ask(request.question, top_k=request.top_k)
+        result = rag_system.ask(request.question,
+                                top_k=request.search_top_k,
+                                final_top_k=request.llm_top_k,
+                                score_threshold=request.search_min_score)
 
         # Clean the answer formatting
         answer_text = result.get("answer", "Sorry, I could not generate an answer.")

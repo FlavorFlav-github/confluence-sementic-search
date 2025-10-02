@@ -24,10 +24,13 @@ MIN_CHUNK_SIZE = 50  # Minimum viable chunk size
 ENRICH_WITH_NEIGHBORS = 1
 
 # Search configuration
-DEFAULT_TOP_K = 10
-RERANK_TOP_K = 20
-SOURCE_SELECTION = 5
+DEFAULT_TOP_K = 15
+RERANK_TOP_K = 5
+SOURCE_THRESHOLD = 0.4
 HYBRID_ALPHA = 0.7  # Weight for semantic vs keyword search (0.7 = 70% semantic, 30% keyword)
 
-LLM_BACKEND_TYPE="ollama"
-LLM_MODEL="phi3.5_q8_0"
+LLM_BACKEND_TYPE_GENERATION="ollama"
+LLM_MODEL_GENERATION="phi3.5_q8_0"
+
+LLM_BACKEND_TYPE_REFINEMENT="gemini"
+LLM_MODEL_REFINE="flash"
