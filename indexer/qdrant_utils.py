@@ -29,6 +29,7 @@ def start_qdrant():
         container_id = result.stdout.strip()
         
         if container_id:
+            print(f"Found existing Qdrant container: {container_id}")
             # If exists but stopped, start it
             subprocess.run(["docker", "start", container_id], check=True)
             print(f"Started existing Qdrant container: {container_id}")

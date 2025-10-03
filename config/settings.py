@@ -5,10 +5,10 @@ os.environ['PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION'] = 'python'
 # -------------------------
 # 1. Enhanced Config
 # -------------------------
-CONFLUENCE_BASE_URL = os.getenv("CONFLUENCE_BASE_URL")
-CONFLUENCE_API_TOKEN = os.getenv("CONFLUENCE_API_TOKEN")
-CONFLUENCE_ROOT_PAGE_ID = os.getenv("CONFLUENCE_ROOT_PAGE_ID", "").split(",")
-SPACE_KEY = os.getenv("SPACE_KEY")
+DATA_SOURCE_BASE_URL = os.getenv("DATA_SOURCE_BASE_URL")
+DATA_SOURCE_API_TOKEN = os.getenv("DATA_SOURCE_API_TOKEN")
+DATA_SOURCE_ROOT_PAGE_ID = os.getenv("DATA_SOURCE_ROOT_PAGE_ID", "").split(",")
+DATA_SOURCE_NAME = os.getenv("DATA_SOURCE_NAME")
 
 QDRANT_URL = "http://localhost:6333"
 COLLECTION_NAME = "confluence_pages_sxp_enhanced_v3"
@@ -16,6 +16,9 @@ COLLECTION_NAME = "confluence_pages_sxp_enhanced_v3"
 # Enhanced embedding configuration
 SENTENCE_TRANSFORMER = 'all-mpnet-base-v2'
 EMBEDDING_SIZE = 768
+
+INDEXING_MAX_CONCURRENT = 30
+INDEXING_BATCH_SIZE = 500
 
 # Advanced text processing configuration
 CHUNK_SIZE_LIMIT = 600  # Slightly larger chunks for better context

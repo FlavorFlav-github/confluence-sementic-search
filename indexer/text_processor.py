@@ -54,20 +54,20 @@ class EnhancedTextProcessor:
         self.chunk_size_limit = chunk_size_limit
         self.chunk_size_overlap = chunk_size_overlap
 
-    def extract_text_from_storage(self, body_storage: dict) -> str:
+    def extract_text_from_storage(self, body_storage: str) -> str:
         """
         Extracts clean, readable text from a content storage structure, typically containing HTML.
 
         Uses BeautifulSoup for robust parsing and cleaning of HTML content.
 
         Args:
-            body_storage (dict): A dictionary containing the content, expected to have a "value" key with HTML string.
+            body_storage (str): A dictionary containing the content, expected to have a "value" key with HTML string.
 
         Returns:
             str: The clean, plain text content.
         """
         # Retrieve the raw HTML content
-        html = body_storage.get("value", "")
+        html = body_storage
         # Initialize BeautifulSoup parser
         soup = BeautifulSoup(html, "html.parser")
 
