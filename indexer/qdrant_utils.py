@@ -1,10 +1,13 @@
 import subprocess
 import time
+from typing import Dict, Any, List
 
 from qdrant_client import QdrantClient
+from qdrant_client.http.models import FieldCondition, MatchValue, Filter
 
 from config import settings
 from config.logging_config import logger
+from config.settings import COLLECTION_NAME
 
 
 def start_qdrant():
@@ -106,3 +109,65 @@ def check_and_start_qdrant(timeout: int = 60, retry_delay: int = 5) -> QdrantCli
         logger.error(f"Failed to connect to or start Qdrant: {e}")
         # Exit the application as the required service is unavailable
         exit(1)
+
+def get_documents_by_metadata(
+    client: QdrantClient,
+    collection_name: str,
+    filters: Dict[str, Any],
+    limit: int = 100,
+    with_vectors: bool = False,
+    with_payload: bool = True,
+) -> List[Dict[str, Any]]:
+    """
+    Retrieve documents from a Qdrant collection based on metadata filters.
+
+    Args:
+        client (QdrantClient): The initialized Qdrant client.
+        collection_name (str): Name of the collection to query.
+        filters (Dict[str, Any]): Key-value pairs to filter by metadata fields.
+                                  Example: {"space": "dev", "source": "confluence"}
+        limit (int): Maximum number of documents to return.
+        with_vectors (bool): Whether to include vector embeddings in the response.
+        with_payload (bool): Whether to include metadata/payload fields in the response.
+
+    Returns:
+        List[Dict[str, Any]]: A list of matching documents (points) with their payloads.
+    """
+    if not filters:
+        raise ValueError("You must provide at least one metadata filter.")
+
+    # Build Qdrant filter structure
+    conditions = [
+        FieldCondition(key=k, match=MatchValue(value=v))
+        for k, v in filters.items()
+    ]
+    query_filter = Filter(must=conditions)
+
+    try:
+        result = client.scroll(
+            collection_name=collection_name,
+            scroll_filter=query_filter,
+            limit=limit,
+            with_vectors=with_vectors,
+            with_payload=with_payload,
+        )
+
+        # result is (points, next_offset)
+        points, _ = result
+
+        documents = []
+        for point in points:
+            documents.append({
+                "id": point.id,
+                "payload": point.payload if with_payload else None,
+                "vector": point.vector if with_vectors else None,
+            })
+        return documents
+
+    except Exception as e:
+        logger.error(f"Failed to retrieve documents from Qdrant: {e}")
+        return []
+
+check_and_start_qdrant()
+get_documents_by_metadata(
+    QdrantClient(settings.QDRANT_URL),COLLECTION_NAME,{"title": '5.1.0 - Atlas'}, with_vectors=True)

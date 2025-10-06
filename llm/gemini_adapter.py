@@ -9,7 +9,6 @@ from google.genai.errors import APIError
 # Assuming LLMAdapter is defined in llm.base_adapter
 from llm.base_adapter import LLMAdapter
 
-
 class GeminiModelAdapter(LLMAdapter):
     """
     Concrete implementation of the LLMAdapter for the Gemini API backend.

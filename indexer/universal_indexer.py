@@ -44,6 +44,7 @@ class UniversalIndexer:
         self.model_embed = embedding_model
         self.text_processor = text_processor
         self.hybrid_index = hybrid_index
+        self.data_source_name = data_source_name
         self.data_adapter = DATA_SOURCE_REF.get(data_source_name, None)
         if self.data_adapter is None:
             logging.exception(f"Data adapter {self.data_adapter} not found.")
@@ -160,6 +161,7 @@ class UniversalIndexer:
                         vector=emb,
                         payload={
                             "title": content.title,
+                            "source": self.data_source_name,
                             "page_id": content.page_id,
                             "tables": chunk['tables'],
                             "space_name": content.space_name,

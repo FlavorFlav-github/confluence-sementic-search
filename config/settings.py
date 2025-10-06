@@ -1,17 +1,22 @@
 import os
 
-os.environ['PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION'] = 'python'
+from config.secrets_manager import get_secret
+
+os.environ['PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION'] = "python"
 
 # -------------------------
 # 1. Enhanced Config
 # -------------------------
-DATA_SOURCE_BASE_URL = os.getenv("DATA_SOURCE_BASE_URL")
-DATA_SOURCE_API_TOKEN = os.getenv("DATA_SOURCE_API_TOKEN")
-DATA_SOURCE_ROOT_PAGE_ID = os.getenv("DATA_SOURCE_ROOT_PAGE_ID", "").split(",")
-DATA_SOURCE_NAME = os.getenv("DATA_SOURCE_NAME")
+DATA_SOURCE_BASE_URL = get_secret("DATA_SOURCE_BASE_URL")
+DATA_SOURCE_API_TOKEN = get_secret("DATA_SOURCE_API_TOKEN")
+DATA_SOURCE_ROOT_PAGE_ID = get_secret("DATA_SOURCE_ROOT_PAGE_ID", "").split(",")
+DATA_SOURCE_NAME = get_secret("DATA_SOURCE_NAME")
 
-QDRANT_URL = "http://localhost:6333"
-COLLECTION_NAME = "confluence_pages_sxp_enhanced_v3"
+QDRANT_BASE_URL = get_secret("QDRANT_BASE_URL")
+QDRANT_PORT = os.getenv("QDRANT_PORT")
+QDRANT_URL = f"{QDRANT_BASE_URL}:{QDRANT_PORT}"
+
+COLLECTION_NAME = get_secret("QDRANT_COLLECTION_NAME")
 
 # Enhanced embedding configuration
 SENTENCE_TRANSFORMER = 'all-mpnet-base-v2'
