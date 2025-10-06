@@ -131,10 +131,9 @@ class UniversalIndexer:
                 self._delete_old_chunks(content.page_id)
 
             # Extract and chunk text
-            text, extracted_table = self.text_processor.extract_text_from_storage(content.body)
+            text = self.text_processor.extract_text_from_storage(content.body)
             text_chunks = self.text_processor.smart_chunk_text(
                 text,
-                extracted_table,
                 self.text_processor.chunk_size_limit,
                 self.text_processor.min_chunk_size,
                 self.text_processor.chunk_size_overlap
@@ -144,7 +143,7 @@ class UniversalIndexer:
                 return PageData([], [], [], content.page_id)
 
             # Batch embed all chunks
-            chunk_texts = [x['text'] for x in text_chunks]
+            chunk_texts = [x for x in text_chunks]
             embeddings = common.embed_text(self.model_embed, chunk_texts)
 
             page_points = []
@@ -153,7 +152,7 @@ class UniversalIndexer:
             for i, (chunk, emb) in enumerate(zip(text_chunks, embeddings)):
                 chunk_id = f"{content.page_id}_{i}"
                 point_id = str(uuid5(NAMESPACE_URL, chunk_id))
-                keywords = self.text_processor.extract_keywords(chunk['text'])
+                keywords = self.text_processor.extract_keywords(chunk)
 
                 page_points.append(
                     PointStruct(
@@ -163,22 +162,21 @@ class UniversalIndexer:
                             "title": content.title,
                             "source": self.data_source_name,
                             "page_id": content.page_id,
-                            "tables": chunk['tables'],
                             "space_name": content.space_name,
                             "chunk_id": chunk_id,
-                            "text": chunk['text'],
+                            "text": chunk,
                             "keywords": keywords,
                             "last_updated": content.last_updated,
                             "link": content.link,
                             "position": i,
                             "hierarchy": content.hierarchy,
-                            "text_length": len(chunk['text']),
+                            "text_length": len(chunk),
                             "space_key": content.space_key
                         }
                     )
                 )
 
-                tfidf_texts.append(chunk['text'])
+                tfidf_texts.append(chunk)
                 tfidf_ids.append(chunk_id)
 
             return PageData(page_points, tfidf_texts, tfidf_ids, content.page_id)

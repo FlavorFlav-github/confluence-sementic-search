@@ -1,7 +1,8 @@
 import re
+import unicodedata
 from uuid import uuid4
 from collections import defaultdict
-from typing import List
+from typing import List, Tuple, Dict, Any
 
 import nltk
 from bs4 import BeautifulSoup
@@ -54,6 +55,69 @@ class EnhancedTextProcessor:
         self.chunk_size_limit = chunk_size_limit
         self.chunk_size_overlap = chunk_size_overlap
 
+    @staticmethod
+    def _json_to_markdown(table_json):
+        """
+        Converts a JSON table representation to a Markdown table.
+
+        table_json: dict with keys "headers" and "rows"
+        """
+        headers = table_json.get("headers", [])
+        rows = table_json.get("rows", [])
+
+        # Create Markdown header
+        md = "| " + " | ".join(headers) + " |\n"
+        md += "| " + " | ".join(["-" * len(h) for h in headers]) + " |\n"
+
+        # Add rows
+        for row in rows:
+            md += "| " + " | ".join(row) + " |\n"
+
+        return md
+
+    @staticmethod
+    def _html_to_markdown_table(table):
+        """Converts a BeautifulSoup <table> element to Markdown string."""
+        headers = [th.get_text(strip=True) for th in table.find_all("th")]
+        rows = []
+        for tr in table.find_all("tr"):
+            cells = [td.get_text(strip=True) for td in tr.find_all("td")]
+            if cells:
+                rows.append(cells)
+
+        if not headers and rows:
+            # Use first row as header if <th> is missing
+            headers = rows.pop(0)
+
+        # Build Markdown table
+        md = ""
+        if headers:
+            md += "| " + " | ".join(headers) + " |\n"
+            md += "| " + " | ".join(["---"] * len(headers)) + " |\n"
+        for row in rows:
+            md += "| " + " | ".join(row) + " |\n"
+
+        return md.strip(), {"headers": headers, "rows": rows}
+
+    def _clean_text(self, text):
+        # Remove HTML tags
+        text = re.sub(r'<[^>]+>', ' ', text)
+        # Normalize unicode characters (accents, etc.)
+        text = unicodedata.normalize('NFKC', text)
+        # Normalize quotes, apostrophes, dashes
+        text = text.replace('‘', "'").replace('’', "'")
+        text = text.replace('“', '"').replace('”', '"')
+        text = text.replace('–', '-').replace('—', '-')
+        # Remove emails
+        text = re.sub(r'\S+@\S+\.\S+', '[EMAIL]', text)
+        # Remove phone numbers (basic)
+        text = re.sub(r'\+?\d[\d\s\-]{7,}\d', '[PHONE]', text)
+        # Replace unusual symbols with space (except basic punctuation)
+        text = re.sub(r'[^\w\s.,!?\'"-]', ' ', text)
+        # Collapse multiple spaces
+        text = re.sub(r'\s+', ' ', text).strip()
+        return text
+
     def extract_text_from_storage(self, body_storage: str) -> str:
         """
         Extracts clean, readable text from a content storage structure, typically containing HTML.
@@ -75,27 +139,17 @@ class EnhancedTextProcessor:
         for script in soup(["script", "style"]):
             script.decompose()
 
-        tables_data = {}
         for table in soup.find_all("table"):
-            table_id = str(uuid4())
-            headers = [th.get_text(strip=True) for th in table.find_all("th")]
-            rows = []
-            for tr in table.find_all("tr"):
-                cells = [td.get_text(strip=True) for td in tr.find_all("td")]
-                if cells:
-                    rows.append(cells)
+            md_table, _ = self._html_to_markdown_table(table)
 
-            # Save structured form
-            tables_data[table_id] = {"headers": headers, "rows": rows}
-
-            # Replace table with a placeholder marker
-            table.replace_with(f" [[TABLE_ID:{table_id}]] ")
+            # Replace the HTML table with Markdown table
+            table.replace_with(md_table)
 
         # Now the text has placeholders
         text = soup.get_text(separator=" ", strip=True)
         text = re.sub(r"\s+", " ", text)
 
-        return text, tables_data
+        return text
 
     def extract_keywords(self, text: str, top_k: int = 10) -> List[str]:
         """
@@ -131,35 +185,81 @@ class EnhancedTextProcessor:
         # Return the top K most frequent unique words
         return sorted(word_freq.keys(), key=word_freq.get, reverse=True)[:top_k]
 
-    def smart_chunk_text(self, text, tables_data, max_chars=500, min_chunk=50, overlap=50):
-        sentences = sent_tokenize(text)
+    def _split_markdown_tables(self, text):
+        """
+        Splits text into segments of normal text and markdown tables.
+        Returns a list of dicts: {'type': 'text'|'table', 'content': str}
+        """
+        segments = []
+        pattern = re.compile(r'((?:\|.*\|\n?)+)', re.MULTILINE)
+        last_end = 0
+        for match in pattern.finditer(text):
+            start, end = match.span()
+            if start > last_end:
+                segments.append({"type": "text", "content": text[last_end:start]})
+            segments.append({"type": "table", "content": match.group(1).strip()})
+            last_end = end
+        if last_end < len(text):
+            segments.append({"type": "text", "content": text[last_end:]})
+        return segments
+
+    def _chunk_markdown_table(self, table_text, max_chars=500):
+        """
+        Splits a long markdown table into smaller chunks,
+        ensuring headers persist in each sub-chunk.
+        """
+        lines = [line.strip() for line in table_text.splitlines() if line.strip()]
+        if len(lines) <= 2:
+            return [table_text]  # small table — no need to chunk
+
+        header = "\n".join(lines[:2])  # header + separator
+        data_rows = lines[2:]
+        chunks = []
+        current_rows = []
+
+        for row in data_rows:
+            tentative = header + "\n" + "\n".join(current_rows + [row])
+            if len(tentative) > max_chars and current_rows:
+                chunks.append(header + "\n" + "\n".join(current_rows))
+                current_rows = [row]
+            else:
+                current_rows.append(row)
+
+        if current_rows:
+            chunks.append(header + "\n" + "\n".join(current_rows))
+
+        return chunks
+
+    def smart_chunk_text(self, text, max_chars=500, min_chunk=50, overlap=50):
+        """
+        Splits text (with markdown tables) into overlapping, clean chunks.
+        If a markdown table spans multiple chunks, headers are repeated.
+        """
+        text = self._clean_text(text)
+        segments = self._split_markdown_tables(text)
         chunks = []
         current_chunk = ""
 
-        for sentence in sentences:
-            if len(current_chunk) + len(sentence) + 1 > max_chars and current_chunk:
-                if len(current_chunk) >= min_chunk:
-                    chunks.append(current_chunk.strip())
-                current_chunk = sentence
+        for seg in segments:
+            if seg["type"] == "table":
+                table_chunks = self._chunk_markdown_table(seg["content"], max_chars=max_chars)
+                for t_chunk in table_chunks:
+                    if current_chunk:
+                        chunks.append(current_chunk.strip())
+                        current_chunk = ""
+                    chunks.append(t_chunk.strip())
             else:
-                current_chunk += " " + sentence if current_chunk else sentence
+                sentences = sent_tokenize(seg["content"])
+                for sentence in sentences:
+                    if len(current_chunk) + len(sentence) + 1 > max_chars:
+                        if len(current_chunk) >= min_chunk:
+                            chunks.append(current_chunk.strip())
+                        overlap_text = " ".join(current_chunk.split()[-overlap:]) if overlap > 0 else ""
+                        current_chunk = overlap_text + " " + sentence if overlap_text else sentence
+                    else:
+                        current_chunk += " " + sentence if current_chunk else sentence
 
         if current_chunk and len(current_chunk) >= min_chunk:
             chunks.append(current_chunk.strip())
 
-        # Attach tables to chunks
-        chunk_objects = []
-        for ch in chunks:
-            # Find all table IDs in this chunk
-            table_ids = re.findall(r"\[\[TABLE_ID:(.*?)\]\]", ch)
-            chunk_tables = [tables_data[tid] for tid in table_ids if tid in tables_data]
-
-            # Remove markers from text for embeddings
-            clean_text = re.sub(r"\[\[TABLE_ID:.*?\]\]", "[TABLE]", ch)
-
-            chunk_objects.append({
-                "text": clean_text,
-                "tables": chunk_tables
-            })
-
-        return chunk_objects
+        return chunks

@@ -168,6 +168,10 @@ def get_documents_by_metadata(
         logger.error(f"Failed to retrieve documents from Qdrant: {e}")
         return []
 
-check_and_start_qdrant()
-get_documents_by_metadata(
-    QdrantClient(settings.QDRANT_URL),COLLECTION_NAME,{"title": '5.1.0 - Atlas'}, with_vectors=True)
+def main():
+    check_and_start_qdrant()
+    print(get_documents_by_metadata(
+        QdrantClient(settings.QDRANT_URL),COLLECTION_NAME,{"title": '5.1.1 - Payslips fields to synchronize'}, with_vectors=True))
+
+if __name__ == "__main__":
+    main()
