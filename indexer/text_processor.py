@@ -258,23 +258,42 @@ class EnhancedTextProcessor:
         # Return the top K most frequent unique words
         return sorted(word_freq.keys(), key=word_freq.get, reverse=True)[:top_k]
 
+    import re
+    import json
+
     def _split_json_blocks(self, text):
         """
         Splits text into segments of normal text and JSON blocks.
         Returns a list of dicts: {'type': 'text'|'json', 'content': str}
+        Only valid JSON blocks are labeled as 'json'.
         """
         segments = []
-        # Regex for JSON block (matches {...} or [...] at top-level)
+        # First-pass regex for {...} or [...] blocks
         pattern = re.compile(r'(\{.*?\}|\[.*?\])', re.DOTALL)
         last_end = 0
+
         for match in pattern.finditer(text):
             start, end = match.span()
+            candidate = match.group(1).strip()
+
+            # Add preceding text
             if start > last_end:
                 segments.append({"type": "text", "content": text[last_end:start]})
-            segments.append({"type": "json", "content": match.group(1).strip()})
+
+            # Check if candidate is valid JSON
+            try:
+                json.loads(candidate)
+                segments.append({"type": "json", "content": candidate})
+            except ValueError:
+                # Not valid JSON, treat as text
+                segments.append({"type": "text", "content": candidate})
+
             last_end = end
+
+        # Add remaining text
         if last_end < len(text):
             segments.append({"type": "text", "content": text[last_end:]})
+
         return segments
 
     def _chunk_json_block(self, json_text, max_chars=500):

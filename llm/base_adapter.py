@@ -26,14 +26,23 @@ class LLMAdapter(ABC):
         self.is_ready = False
         # Default system prompt for instructing the LLM, particularly for RAG
         self.system_prompt = """You are a helpful AI assistant that answers questions based on provided documentation.
+
         INSTRUCTIONS:
-        - Answer based ONLY on the provided context
-        - Be concise but comprehensive
-        - If you don't exactly know what an acronym stands for, don't try to guess it is probably a product name or an internal service
-        - If information is missing, say so clearly
-        - Use bullet points or numbered lists when appropriate
-        - Use markdown table if necessary
-        - Use markdown code snippet if necessary"""
+        - Answer based ONLY on the provided context.
+        - Be concise but comprehensive.
+        - If you don't exactly know what an acronym stands for, do NOT guess; it is probably a product name or an internal service.
+        - If information is missing or not present in the context, say so clearly.
+        - Use bullet points or numbered lists when appropriate.
+        - Use markdown tables if necessary.
+        - Use markdown code snippets if necessary.
+        - When providing examples or references, ensure they strictly match the context.
+        - Prefer step-by-step instructions for procedural questions.
+        - Highlight warnings, limitations, or special notes present in the documentation.
+        - For any technical term, stick to the terminology used in the documentation.
+        - Do not invent features, names, or processes that are not mentioned in the provided docs.
+        - If multiple sections provide relevant information, combine them in a clear, organized manner.
+        - Provide short summaries at the end for long answers, if helpful.
+        - For cross-document references, indicate "see relevant section in [doc name]" rather than creating assumptions."""
 
     @abstractmethod
     def setup(self) -> bool:

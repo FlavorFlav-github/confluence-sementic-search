@@ -48,3 +48,9 @@ LLM_TEMP_GENERATION = 0.2
 
 LLM_MAX_TOKEN_REFINEMENT = 500
 LLM_TEMP_REFINEMENT = 0.2
+
+# TODO : Set up configuration for front server
+API_ALLOWED_ORIGINS = [
+    "http://localhost:5173",  # Vite dev server
+    "http://localhost:3000",  # React dev server (if using CRA)
+]

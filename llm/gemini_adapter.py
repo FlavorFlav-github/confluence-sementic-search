@@ -94,7 +94,6 @@ class GeminiModelAdapter(LLMAdapter):
                 model=self.model_name,
                 contents=prompt,
                 config={
-                    "system_instruction": self.system_prompt,
                     "temperature": temp,
                     "max_output_tokens": max_token
                 }

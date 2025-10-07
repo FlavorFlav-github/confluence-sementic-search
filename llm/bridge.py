@@ -127,7 +127,7 @@ class LocalLLMBridge:
         if not search_results:
             return {'question': question, 'answer': "I couldn't find any relevant information.", 'sources': [],
                     'model_used': self.model_name}
-        if ENRICH_WITH_NEIGHBORS > 0:
+        if ENRICH_WITH_NEIGHBORS > -2:
             search_results = self.search.merge_adjacent_chunks_qdrant(search_results, k=ENRICH_WITH_NEIGHBORS)
 
         # Step 3: Format Context for the LLM
