@@ -29,6 +29,7 @@ class LLMAdapter(ABC):
         INSTRUCTIONS:
         - Answer based ONLY on the provided context
         - Be concise but comprehensive
+        - If you don't exactly know what an acronym stands for, don't try to guess it is probably a product name or an internal service
         - If information is missing, say so clearly
         - Use bullet points or numbered lists when appropriate
         - Use markdown table if necessary
@@ -48,7 +49,7 @@ class LLMAdapter(ABC):
         pass
 
     @abstractmethod
-    def ask(self, question: str) -> Dict:
+    def ask(self, question: str, max_token: int = 500, temp: float = 0.2) -> Dict:
         """
         Abstract method to ask a question, perform RAG, and get an answer.
 

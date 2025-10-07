@@ -1,3 +1,4 @@
+import json
 import re
 import unicodedata
 from uuid import uuid4
@@ -76,28 +77,100 @@ class EnhancedTextProcessor:
         return md
 
     @staticmethod
-    def _html_to_markdown_table(table):
-        """Converts a BeautifulSoup <table> element to Markdown string."""
+    def _html_table_to_markdown(table_html: str) -> str:
+        """
+        Converts a single HTML <table> element into a well-formatted Markdown table.
+        """
+        soup = BeautifulSoup(table_html, "html.parser")
+        table = soup.find("table")
+        if not table:
+            return ""
+
+        # Extract headers
         headers = [th.get_text(strip=True) for th in table.find_all("th")]
+        # Extract rows
         rows = []
         for tr in table.find_all("tr"):
             cells = [td.get_text(strip=True) for td in tr.find_all("td")]
             if cells:
                 rows.append(cells)
 
+        # Handle case: no <th> — infer header from first row
         if not headers and rows:
-            # Use first row as header if <th> is missing
-            headers = rows.pop(0)
+            headers = [f"Column {i + 1}" for i in range(len(rows[0]))]
 
-        # Build Markdown table
-        md = ""
-        if headers:
-            md += "| " + " | ".join(headers) + " |\n"
-            md += "| " + " | ".join(["---"] * len(headers)) + " |\n"
-        for row in rows:
-            md += "| " + " | ".join(row) + " |\n"
+        # Build Markdown
+        md_lines = []
 
-        return md.strip(), {"headers": headers, "rows": rows}
+        # Header row
+        md_lines.append("| " + " | ".join(headers) + " |")
+        # Separator
+        md_lines.append("| " + " | ".join(["---"] * len(headers)) + " |")
+
+        # Data rows
+        for r in rows:
+            padded = r + [""] * (len(headers) - len(r))  # ensure equal columns
+            md_lines.append("| " + " | ".join(padded) + " |")
+
+        return "\n".join(md_lines)
+
+    def _html_table_to_json(self, table):
+        """
+        Convert an HTML <table> into JSON.
+        Handles <th>, missing headers, colspan, and rowspan.
+        """
+        grid = []  # 2D array of cells
+        rowspan_map = {}  # track cells that span multiple rows
+
+        rows = table.find_all("tr")
+        for row_idx, tr in enumerate(rows):
+            cells = []
+            col_idx = 0
+
+            # Fill from previous rowspans first
+            while col_idx in rowspan_map and rowspan_map[col_idx]:
+                cells.append(rowspan_map[col_idx]["text"])
+                rowspan_map[col_idx]["rows_left"] -= 1
+                if rowspan_map[col_idx]["rows_left"] <= 0:
+                    del rowspan_map[col_idx]
+                col_idx += 1
+
+            for cell in tr.find_all(["td", "th"]):
+                text = cell.get_text(strip=True)
+                colspan = int(cell.get("colspan", 1))
+                rowspan = int(cell.get("rowspan", 1))
+
+                for i in range(colspan):
+                    cells.append(text)
+                    if rowspan > 1:
+                        rowspan_map[col_idx + i] = {
+                            "text": text,
+                            "rows_left": rowspan - 1
+                        }
+                col_idx += colspan
+
+            grid.append(cells)
+
+        # First row = headers (or fallback)
+        headers = grid[0] if grid else []
+        if not headers:
+            headers = [f"col{i + 1}" for i in range(len(grid[1]))] if len(grid) > 1 else []
+
+        # If any row has more cells than headers, expand headers
+        max_cols = max(len(r) for r in grid)
+        if len(headers) < max_cols:
+            headers += [f"col{i + 1}" for i in range(len(headers), max_cols)]
+
+        # Build JSON rows
+        json_rows = []
+        for row in grid[1:]:
+            row_data = {}
+            for i, value in enumerate(row):
+                key = headers[i] if i < len(headers) else f"col{i + 1}"
+                row_data[key] = value
+            json_rows.append(row_data)
+
+        return json.dumps(json_rows, indent=2)
 
     def _clean_text(self, text):
         # Remove HTML tags
@@ -140,14 +213,14 @@ class EnhancedTextProcessor:
             script.decompose()
 
         for table in soup.find_all("table"):
-            md_table, _ = self._html_to_markdown_table(table)
+            json_table = self._html_table_to_json(table)
 
             # Replace the HTML table with Markdown table
-            table.replace_with(md_table)
+            table.replace_with(f"\n{json_table}\n")
 
         # Now the text has placeholders
-        text = soup.get_text(separator=" ", strip=True)
-        text = re.sub(r"\s+", " ", text)
+        text = soup.get_text()
+        text = re.sub(r"\n\s*\n+", "\n\n", text)
 
         return text
 
@@ -185,69 +258,75 @@ class EnhancedTextProcessor:
         # Return the top K most frequent unique words
         return sorted(word_freq.keys(), key=word_freq.get, reverse=True)[:top_k]
 
-    def _split_markdown_tables(self, text):
+    def _split_json_blocks(self, text):
         """
-        Splits text into segments of normal text and markdown tables.
-        Returns a list of dicts: {'type': 'text'|'table', 'content': str}
+        Splits text into segments of normal text and JSON blocks.
+        Returns a list of dicts: {'type': 'text'|'json', 'content': str}
         """
         segments = []
-        pattern = re.compile(r'((?:\|.*\|\n?)+)', re.MULTILINE)
+        # Regex for JSON block (matches {...} or [...] at top-level)
+        pattern = re.compile(r'(\{.*?\}|\[.*?\])', re.DOTALL)
         last_end = 0
         for match in pattern.finditer(text):
             start, end = match.span()
             if start > last_end:
                 segments.append({"type": "text", "content": text[last_end:start]})
-            segments.append({"type": "table", "content": match.group(1).strip()})
+            segments.append({"type": "json", "content": match.group(1).strip()})
             last_end = end
         if last_end < len(text):
             segments.append({"type": "text", "content": text[last_end:]})
         return segments
 
-    def _chunk_markdown_table(self, table_text, max_chars=500):
+    def _chunk_json_block(self, json_text, max_chars=500):
         """
-        Splits a long markdown table into smaller chunks,
-        ensuring headers persist in each sub-chunk.
+        Splits a large JSON block into smaller chunks while ensuring valid JSON.
+        If it's a list of objects, split by array elements.
         """
-        lines = [line.strip() for line in table_text.splitlines() if line.strip()]
-        if len(lines) <= 2:
-            return [table_text]  # small table — no need to chunk
+        try:
+            data = json.loads(json_text)
+        except Exception:
+            # If JSON parsing fails, just return raw text
+            return [json_text]
 
-        header = "\n".join(lines[:2])  # header + separator
-        data_rows = lines[2:]
+        # If not a list (e.g., dict), keep whole thing
+        if not isinstance(data, list):
+            return [json_text]
+
         chunks = []
-        current_rows = []
-
-        for row in data_rows:
-            tentative = header + "\n" + "\n".join(current_rows + [row])
-            if len(tentative) > max_chars and current_rows:
-                chunks.append(header + "\n" + "\n".join(current_rows))
-                current_rows = [row]
+        current = []
+        for item in data:
+            tentative = current + [item]
+            tentative_str = json.dumps(tentative, indent=2)
+            if len(tentative_str) > max_chars and current:
+                # Close previous chunk
+                chunks.append(json.dumps(current, indent=2))
+                current = [item]
             else:
-                current_rows.append(row)
+                current.append(item)
 
-        if current_rows:
-            chunks.append(header + "\n" + "\n".join(current_rows))
+        if current:
+            chunks.append(json.dumps(current, indent=2))
 
         return chunks
 
     def smart_chunk_text(self, text, max_chars=500, min_chunk=50, overlap=50):
         """
-        Splits text (with markdown tables) into overlapping, clean chunks.
-        If a markdown table spans multiple chunks, headers are repeated.
+        Splits text (with JSON blocks) into overlapping, clean chunks.
+        If a JSON block spans multiple chunks, each chunk is valid JSON.
         """
-        text = self._clean_text(text)
-        segments = self._split_markdown_tables(text)
+        text = text.strip()
+        segments = self._split_json_blocks(text)
         chunks = []
         current_chunk = ""
 
         for seg in segments:
-            if seg["type"] == "table":
-                table_chunks = self._chunk_markdown_table(seg["content"], max_chars=max_chars)
-                for t_chunk in table_chunks:
+            if seg["type"] == "json":
+                json_chunks = self._chunk_json_block(seg["content"], max_chars=max_chars)
+                for j_chunk in json_chunks:
                     if current_chunk:
                         chunks.append(current_chunk.strip())
                         current_chunk = ""
-                    chunks.append(t_chunk.strip())
+                    chunks.append(j_chunk.strip())
             else:
                 sentences = sent_tokenize(seg["content"])
                 for sentence in sentences:

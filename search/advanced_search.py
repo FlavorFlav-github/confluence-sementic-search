@@ -121,8 +121,8 @@ class AdvancedSearch:
                     sr = SearchResult(
                         page_id=r.payload['page_id'],
                         title=r.payload['title'],
+                        source=r.payload['source'],
                         text=r.payload['text'],
-                        tables=r.payload['tables'],
                         score=r.score,
                         semantic_score=r.score,
                         keyword_score=0.0,  # Semantic search only, keyword score is zero
@@ -153,8 +153,8 @@ class AdvancedSearch:
                 SearchResult(
                     page_id=page_id,
                     title=base.title,
+                    source=base.source,
                     text=base.text,
-                    tables=base.tables,
                     score=combined_score,  # Use the custom combined score for ranking
                     semantic_score=avg_score,
                     keyword_score=0.0,
@@ -176,114 +176,145 @@ class AdvancedSearch:
         """
         Fetches chunks that are positionally adjacent to a given search result from the same document (page_id).
 
-        This is used for context enrichment in RAG systems, providing surrounding text to the initial hit.
+        If k=-1, all chunks for the page are fetched.
 
         Args:
             result (SearchResult): The core search result object (the 'hit' chunk).
             k (int): The number of chunks to fetch before and after the hit chunk (default is 1).
+                     If k=-1, fetch all chunks for the page.
 
         Returns:
             List[SearchResult]: A list of adjacent SearchResult objects.
         """
         if k == 0:
             return []
-        
+
         page_id = result.page_id
-        
-        # Ensure chunk_id is numeric for positional lookups
+
+        # Parse chunk_id correctly
         try:
-            base_chunk_id = int(result.chunk_id)
+            base_id, idx = result.chunk_id.rsplit("_", 1)
+            idx = int(idx)
         except ValueError:
-            logger.warning(f"Chunk ID '{result.chunk_id}' is not numeric. Skipping adjacent fetch.")
+            logger.warning(f"Chunk ID '{result.chunk_id}' is not in expected format. Skipping adjacent fetch.")
             return []
 
-        # Generate target chunk IDs for k positions before and k positions after
-        target_chunk_ids = [str(base_chunk_id - i) for i in range(1, k + 1)] + \
-                           [str(base_chunk_id + i) for i in range(1, k + 1)]
-
         adjacent_results = []
-        for target_id in target_chunk_ids:
-            # Query Qdrant for the specific page_id and chunk_id
+
+        if k == -1:
+            # Fetch all chunks for this page
             response = self.qdrant.scroll(
                 collection_name=COLLECTION_NAME,
                 scroll_filter={
                     "must": [
-                        {"key": "page_id", "match": {"value": page_id}},
-                        {"key": "chunk_id", "match": {"value": target_id}}
+                        {"key": "page_id", "match": {"value": page_id}}
                     ]
                 },
-                limit=1,
+                limit=10000,  # or some large number to cover all chunks
                 with_payload=True
             )
             points, _ = response
-            
-            if points:
-                h = points[0]
-                # Create a SearchResult for the adjacent chunk
-                # Assign a slightly lower score to adjacent chunks to differentiate them from the core hit
-                adjacent_results.append(SearchResult(
-                    page_id=h.payload['page_id'],
-                    title=h.payload['title'],
-                    text=h.payload['text'],
-                    tables=h.payload['tables'],
-                    score=result.score * 0.9,  # Apply a minor penalty to the score
-                    semantic_score=result.score,
-                    keyword_score=0.0,
-                    position=h.payload['position'],
-                    link=h.payload['link'],
-                    last_updated=h.payload['last_updated'],
-                    chunk_id=h.payload['chunk_id'],
-                    page_hierarchy=h.payload.get('hierarchy', [])
-                ))
+            for h in points:
+                if h.payload['chunk_id'] != result.chunk_id:  # exclude the original chunk
+                    adjacent_results.append(SearchResult(
+                        page_id=h.payload['page_id'],
+                        title=h.payload['title'],
+                        source=h.payload.get('source'),
+                        text=h.payload['text'],
+                        score=result.score * 0.9,
+                        semantic_score=h.payload.get("semantic_score", result.semantic_score),
+                        keyword_score=0.0,
+                        position=h.payload['position'],
+                        link=h.payload['link'],
+                        last_updated=h.payload['last_updated'],
+                        chunk_id=h.payload['chunk_id'],
+                        page_hierarchy=h.payload.get('hierarchy', [])
+                    ))
+        else:
+            # Generate target chunk IDs for k before and after
+            target_chunk_ids = [f"{base_id}_{idx - i}" for i in range(1, k + 1)] + \
+                               [f"{base_id}_{idx + i}" for i in range(1, k + 1)]
+            for target_id in target_chunk_ids:
+                response = self.qdrant.scroll(
+                    collection_name=COLLECTION_NAME,
+                    scroll_filter={
+                        "must": [
+                            {"key": "page_id", "match": {"value": page_id}},
+                            {"key": "chunk_id", "match": {"value": target_id}}
+                        ]
+                    },
+                    limit=1,
+                    with_payload=True
+                )
+                points, _ = response
+                if points:
+                    h = points[0]
+                    adjacent_results.append(SearchResult(
+                        page_id=h.payload['page_id'],
+                        title=h.payload['title'],
+                        source=h.payload.get('source'),
+                        text=h.payload['text'],
+                        score=result.score * 0.9,
+                        semantic_score=h.payload.get("semantic_score", result.semantic_score),
+                        keyword_score=0.0,
+                        position=h.payload['position'],
+                        link=h.payload['link'],
+                        last_updated=h.payload['last_updated'],
+                        chunk_id=h.payload['chunk_id'],
+                        page_hierarchy=h.payload.get('hierarchy', [])
+                    ))
 
         return adjacent_results
 
-    def hybrid_search(self, query: str, top_k: int = 10, final_top_k: int = 3,
-                      alpha: float = HYBRID_ALPHA) -> List[SearchResult]:
+    def merge_adjacent_chunks_qdrant(
+            self,
+            search_results: List['SearchResult'],
+            k: int = 1
+    ) -> List['SearchResult']:
         """
-        Combines semantic (vector) search and keyword (lexical/sparse) search results.
+        For each SearchResult, fetches up to `k` adjacent chunks before and after
+        (using Qdrant) and merges their text in the correct order.
 
-        Scores are blended using a weighting factor ($\alpha$) for final re-ranking (Reciprocal Rank Fusion is an alternative).
+        If k=-1, all chunks of the page are fetched and merged.
 
         Args:
-            query (str): The user's query string.
-            top_k (int): The number of sources to get from the database
-            final_top_k (int): The number of final results to return after blending and sorting.
-            alpha (float): The weighting factor for blending (0.0=keyword only, 1.0=semantic only).
+            search_results: List of SearchResult objects from the hybrid search.
+            k: Number of adjacent chunks to fetch before and after each hit. -1 = entire page.
 
         Returns:
-            List[SearchResult]: A list of SearchResult objects re-ranked by the hybrid score.
+            List[SearchResult]: New SearchResult list with merged text (same count as input).
         """
-        # 1. Get initial semantic search results (using the single query)
-        # We use a higher k here (RERANK_TOP_K) to capture a broader initial pool
-        semantic_results = self.semantic_search(queries=[query], top_k=top_k, final_top_k=final_top_k)
+        merged_results = []
 
-        # 2. Get keyword (lexical) search scores
-        keyword_results = []
-        if self.hybrid_search_index.is_fitted:
-            # Get keyword search scores (typically using BM25 or similar)
-            kw_scores = self.hybrid_search_index.keyword_search(query, top_k=RERANK_TOP_K)
+        for result in search_results:
+            # Fetch context from Qdrant
+            adjacent_chunks = self.fetch_adjacent_chunks(result, k=k)
 
-            # Map keyword scores back to the semantic result objects
-            for chunk_id, kw_score in kw_scores:
-                for sem_result in semantic_results:
-                    if sem_result.chunk_id == chunk_id:
-                        keyword_results.append((sem_result, kw_score))
-                        break
+            # Include the main chunk
+            all_related = adjacent_chunks + [result]
 
-        # 3. Combine and Rerank results
-        combined_results = {}
+            # Sort by chunk numeric suffix
+            def chunk_sort_key(r: SearchResult):
+                try:
+                    base, idx = r.chunk_id.rsplit("_", 1)
+                    return int(idx)
+                except ValueError:
+                    return r.chunk_id  # fallback
 
-        # Initialize with semantic results (using alpha weight)
-        for result in semantic_results:
-            combined_results[result.chunk_id] = SearchResult(
+            all_related.sort(key=chunk_sort_key)
+
+            # Merge their text content
+            merged_text = "\n\n".join(r.text for r in all_related if r.text)
+
+            # Build new SearchResult preserving original metadata
+            merged = result.__class__(
                 page_id=result.page_id,
                 title=result.title,
-                text=result.text,
-                tables=result.tables,
-                score=alpha * result.semantic_score,  # Initial score is only semantic part
+                source=result.source,
+                text=merged_text,
+                score=result.score,  # keep original combined score
                 semantic_score=result.semantic_score,
-                keyword_score=0.0,
+                keyword_score=result.keyword_score,
                 position=result.position,
                 link=result.link,
                 last_updated=result.last_updated,
@@ -291,19 +322,84 @@ class AdvancedSearch:
                 page_hierarchy=result.page_hierarchy
             )
 
-        # Add or update with keyword scores
-        for result, kw_score in keyword_results:
-            if result.chunk_id in combined_results:
-                # Store the raw keyword score
-                combined_results[result.chunk_id].keyword_score = kw_score
-                # Calculate the final hybrid score: score = (alpha * semantic) + ((1 - alpha) * keyword)
-                combined_results[result.chunk_id].score = (
-                    alpha * result.semantic_score + (1 - alpha) * kw_score
-                )
+            merged_results.append(merged)
 
-        # Sort the results based on the final hybrid score
-        final_results = sorted(combined_results.values(), key=lambda x: x.score, reverse=True)
-        return final_results[:top_k]
+        return merged_results
+
+    def hybrid_search(
+            self,
+            queries: List[str],
+            top_k: int = 10,
+            final_top_k: int = 3,
+            alpha: float = HYBRID_ALPHA,
+            score_threashold: float = 0
+    ) -> List[SearchResult]:
+        """
+        Hybrid search supporting multiple queries (semantic + keyword).
+        Combines and reranks results from semantic and lexical searches.
+
+        Args:
+            queries (List[str]): List of query strings.
+            top_k (int): Number of results per query to fetch.
+            final_top_k (int): Final number of results to return after merging.
+            alpha (float): Weight for semantic vs. keyword blending.
+            score_threashold (float): Optional threshold for filtering weak matches.
+
+        Returns:
+            List[SearchResult]: Top-ranked results merged across all queries.
+        """
+
+        # --- 1. Semantic Search ---
+        semantic_results = self.semantic_search(
+            queries=queries,
+            top_k=top_k,
+            final_top_k=final_top_k + 3,
+            score_threashold=score_threashold
+        )
+
+        # --- 2. Keyword Search ---
+        keyword_results = []
+        if self.hybrid_search_index.is_fitted:
+            for query in queries:
+                kw_scores = self.hybrid_search_index.keyword_search(query, top_k=top_k)
+                for chunk_id, kw_score in kw_scores:
+                    keyword_results.append((query, chunk_id, kw_score))
+
+        # --- 3. Combine Semantic + Keyword Results ---
+        combined_results = {}
+
+        # Initialize combined results with semantic scores
+        for result in semantic_results:
+            combined_results[result.chunk_id] = SearchResult(
+                page_id=result.page_id,
+                title=result.title,
+                source=result.source,
+                text=result.text,
+                score=alpha * result.semantic_score,
+                semantic_score=result.semantic_score,
+                keyword_score=0.0,
+                position=result.position,
+                link=result.link,
+                last_updated=result.last_updated,
+                chunk_id=result.chunk_id,
+                page_hierarchy=result.page_hierarchy,
+            )
+
+        # Add / update keyword scores
+        for _, chunk_id, kw_score in keyword_results:
+            if chunk_id in combined_results:
+                r = combined_results[chunk_id]
+                r.keyword_score = max(r.keyword_score, kw_score)  # keep the best keyword score
+                r.score = alpha * r.semantic_score + (1 - alpha) * r.keyword_score
+
+        # --- 4. Sort + Return Top Results ---
+        final_results = sorted(
+            combined_results.values(),
+            key=lambda x: x.score,
+            reverse=True
+        )
+
+        return final_results[:final_top_k]
 
     def search_by_page_title(self, title_query: str, top_k: int = 5) -> List[SearchResult]:
         """

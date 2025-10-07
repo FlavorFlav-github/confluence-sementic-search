@@ -26,10 +26,10 @@ INDEXING_MAX_CONCURRENT = 30
 INDEXING_BATCH_SIZE = 500
 
 # Advanced text processing configuration
-CHUNK_SIZE_LIMIT = 600  # Slightly larger chunks for better context
+CHUNK_SIZE_LIMIT = 750  # Slightly larger chunks for better context
 CHUNK_OVERLAP = 150  # More overlap for better continuity
-MIN_CHUNK_SIZE = 50  # Minimum viable chunk size
-ENRICH_WITH_NEIGHBORS = 1
+MIN_CHUNK_SIZE = 100  # Minimum viable chunk size
+ENRICH_WITH_NEIGHBORS = 2
 
 # Search configuration
 DEFAULT_TOP_K = 15
@@ -43,5 +43,8 @@ LLM_MODEL_GENERATION="phi3.5_q8_0"
 LLM_BACKEND_TYPE_REFINEMENT="gemini"
 LLM_MODEL_REFINE="flash"
 
-LLM_MAX_TOKEN = 500
-LLM_TEMP = 0.2
+LLM_MAX_TOKEN_GENERATION = 1000
+LLM_TEMP_GENERATION = 0.2
+
+LLM_MAX_TOKEN_REFINEMENT = 500
+LLM_TEMP_REFINEMENT = 0.2

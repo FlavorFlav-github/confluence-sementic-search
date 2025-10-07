@@ -8,9 +8,9 @@ from typing import List, Optional, Dict
 class SearchResult:
     """Enhanced search result with more metadata for a production environment."""
     page_id: int
+    source: str
     title: str
     text: str
-    tables: List[Dict[str, List[List[str]]]]
     score: float
     semantic_score: float
     keyword_score: float

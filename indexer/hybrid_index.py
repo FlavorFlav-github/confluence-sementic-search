@@ -5,6 +5,7 @@ from typing import List, Tuple
 # Using a simplified cosine similarity function, likely for local development/testing
 from qdrant_client.local.distances import cosine_similarity 
 from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.preprocessing import normalize
 import numpy as np
 
 from config.logging_config import logger
@@ -28,7 +29,8 @@ class HybridSearchIndex:
             max_features=10000,  # Limits the vocabulary size
             stop_words='english',  # Removes common English stop words
             ngram_range=(1, 2),  # Considers single words (unigrams) and two-word phrases (bigrams)
-            min_df=2  # Ignores terms that appear in fewer than 2 documents (chunks)
+            min_df=2,  # Ignores terms that appear in fewer than 2 documents (chunks)
+            dtype = np.float32
         )
         self.tfidf_matrix = None  # Stores the fitted TF-IDF matrix (document vectors)
         # Maps the internal index of the TF-IDF matrix rows to the actual document chunk ID
@@ -68,40 +70,25 @@ class HybridSearchIndex:
 
     def keyword_search(self, query: str, top_k: int = 20) -> List[Tuple[str, float]]:
         """
-        Performs a keyword-based search by calculating the cosine similarity between the query's
-        TF-IDF vector and all document vectors in the corpus.
-
-        Args:
-            query (str): The search query string.
-            top_k (int): The number of top matching chunks to retrieve.
-
-        Returns:
-            List[Tuple[str, float]]: A list of tuples, where each tuple contains the 
-                                     chunk ID and its lexical similarity score (float).
+        Perform memory-efficient keyword search using sparse dot product.
         """
         if not self.is_fitted:
-            logger.warning("Attempted keyword search before TF-IDF model was fitted or loaded.")
+            logger.warning("TF-IDF model not loaded or fitted.")
             return []
 
-        # Convert the query string into a TF-IDF vector using the fitted vectorizer
-        query_vector = self.tfidf_vectorizer.transform([query])
-        
-        # Calculate cosine similarity between the query vector and all document vectors
-        # The result is a flat NumPy array of scores
-        similarities = cosine_similarity(query_vector, self.tfidf_matrix).flatten()
+        query_vec = self.tfidf_vectorizer.transform([query])
+        query_vec = normalize(query_vec)
 
-        # Get the indices of the documents with the highest similarity scores
-        # `np.argsort` returns indices that would sort the array; `[::-1]` reverses for descending order
-        top_indices = np.argsort(similarities)[::-1][:top_k]
-        
-        # Build the final list of results: (chunk_id, score)
-        results = []
-        for idx in top_indices:
-            score = similarities[idx]
-            # Only include results with a score greater than 0 (i.e., non-zero overlap in terms)
-            if score > 0:
-                results.append((self.document_map[idx], score))
+        # Sparse dot product for cosine similarity
+        similarities = self.tfidf_matrix.dot(query_vec.T).toarray().ravel()
 
+        # Partial top-k selection
+        n_docs = similarities.shape[0]
+        k = min(top_k, n_docs)
+        top_indices = np.argpartition(similarities, -k)[-k:]
+        top_indices = top_indices[np.argsort(similarities[top_indices])[::-1]]
+
+        results = [(self.document_map[i], float(similarities[i])) for i in top_indices if similarities[i] > 0]
         return results
 
     def load_tfidf(self):
