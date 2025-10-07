@@ -7,13 +7,13 @@ This project provides a semantic search pipeline over Confluence documentation u
 
 The system:
 
-Indexes Confluence pages into vector embeddings.
+- Indexes Confluence pages into vector embeddings.
 
-Performs semantic search to find the most relevant chunks.
+- Performs semantic search to find the most relevant chunks.
 
-Optionally fetches adjacent chunks for better context continuity.
+- Optionally fetches adjacent chunks for better context continuity.
 
-Uses the retrieved context to build a prompt for an LLM (via Ollama
+- Uses the retrieved context to build a prompt for an LLM (via Ollama
 ) to answer user questions.
 
 This is intended as an open project, designed for teams or individuals who want to query large Confluence spaces with AI, while retaining control over their data.
