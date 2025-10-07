@@ -95,7 +95,7 @@ def main():
                 if sources:
                     for source in sources:
                         # Display source title and search score
-                        print(f"  • {source.get('title', 'N/A')} (Score: {source.get('score', 0.0):.3f}) - {source.get('link', None)}")
+                        print(f"  • ({source.get('source', 'N/A')}) {source.get('title', 'N/A')} (Score: {source.get('score', 0.0):.3f}) - {source.get('link', None)}")
                 else:
                     print("  • No relevant sources found.")
                     

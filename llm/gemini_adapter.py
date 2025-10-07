@@ -10,6 +10,7 @@ from google.genai.errors import APIError
 from llm.base_adapter import LLMAdapter
 
 
+
 class GeminiModelAdapter(LLMAdapter):
     """
     Concrete implementation of the LLMAdapter for the Gemini API backend.
@@ -65,7 +66,7 @@ class GeminiModelAdapter(LLMAdapter):
             self.is_ready = False
             return False
 
-    def ask(self, prompt: str) -> str:
+    def ask(self, prompt: str, max_token: int = 500, temp: float = 0.2) -> str:
         """
         Public method for the Bridge to call for direct LLM generation.
         Delegates to the internal _generate method.
@@ -73,9 +74,9 @@ class GeminiModelAdapter(LLMAdapter):
         if not self.is_ready:
             raise RuntimeError(f"Gemini model '{self.model_name}' is not set up or ready.")
 
-        return self._generate(prompt)
+        return self._generate(prompt, max_token, temp)
 
-    def _generate(self, prompt: str) -> str:
+    def _generate(self, prompt: str, max_token: int = 500, temp: float = 0.2) -> str:
         """
         Core implementation: Sends the prompt to the Gemini API.
 
@@ -94,8 +95,8 @@ class GeminiModelAdapter(LLMAdapter):
                 contents=prompt,
                 config={
                     "system_instruction": self.system_prompt,
-                    "temperature": 0.2,
-                    "max_output_tokens": 1024
+                    "temperature": temp,
+                    "max_output_tokens": max_token
                 }
             )
 

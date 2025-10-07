@@ -6,11 +6,15 @@ from llm.base_adapter import LLMAdapter
 from llm.config import LLMConfig  # Assuming this contains RECOMMENDED_MODELS
 from llm.gemini_adapter import GeminiModelAdapter
 from llm.ollama_adapter import OllamaModelAdapter
+from config.settings import LLM_MAX_TOKEN_GENERATION, LLM_TEMP_GENERATION, LLM_MAX_TOKEN_REFINEMENT, LLM_TEMP_REFINEMENT, ENRICH_WITH_NEIGHBORS
 
 # Assuming this constant is defined in config.settings
 # from config.settings import ENRICH_WITH_NEIGHBORS
-ENRICH_WITH_NEIGHBORS = 1  # Placeholder for demonstration
-
+ENRICH_WITH_NEIGHBORS = ENRICH_WITH_NEIGHBORS  # Placeholder for demonstration
+MAX_TOKEN_GENERATION = LLM_MAX_TOKEN_GENERATION
+TEMP_GENERATION = LLM_TEMP_GENERATION
+MAX_TOKEN_REFINEMENT = LLM_MAX_TOKEN_REFINEMENT
+TEMP_REFINEMENT = LLM_TEMP_REFINEMENT
 
 class LocalLLMBridge:
     """
@@ -109,7 +113,7 @@ class LocalLLMBridge:
             refine_prompt = f"Rewrite '\"{question}\"' into 3 concise, alternative search queries. Return them as a bullet list, without explanation."
 
             # --- Call the Refiner's generation method ---
-            refined_output = self.refiner.ask(refine_prompt)
+            refined_output = self.refiner.ask(refine_prompt, MAX_TOKEN_REFINEMENT, TEMP_REFINEMENT)
 
             refined_queries = [q.strip("-• ").strip() for q in refined_output.splitlines() if q.strip()]
             refined_queries.insert(0, question)
@@ -119,35 +123,23 @@ class LocalLLMBridge:
             refined_queries = [question]
 
         # Step 1: Perform semantic search using the refined queries
-        search_results = self.search.semantic_search(refined_queries, top_k=top_k, final_top_k=final_top_k, score_threashold=score_threshold)
+        search_results = self.search.hybrid_search(refined_queries, top_k=top_k, final_top_k=final_top_k, score_threashold=score_threshold)
         if not search_results:
             return {'question': question, 'answer': "I couldn't find any relevant information.", 'sources': [],
                     'model_used': self.model_name}
-
-        # Step 2: Context Enrichment - Deduplicate and fetch adjacent chunks
-        enriched_results = []
-        seen = set()
-        print("number of sources:", len(search_results))
-        for result in search_results:
-            if (result.page_id, result.chunk_id) not in seen:
-                enriched_results.append(result)
-                seen.add((result.page_id, result.chunk_id))
-
-            neighbors = self.search.fetch_adjacent_chunks(result, k=ENRICH_WITH_NEIGHBORS)
-            for n in neighbors:
-                if (n.page_id, n.chunk_id) not in seen:
-                    enriched_results.append(n)
-                    seen.add((n.page_id, n.chunk_id))
+        if ENRICH_WITH_NEIGHBORS > 0:
+            search_results = self.search.merge_adjacent_chunks_qdrant(search_results, k=ENRICH_WITH_NEIGHBORS)
 
         # Step 3: Format Context for the LLM
         context_pieces = []
-        for i, result in enumerate(enriched_results, 1):
+        for i, result in enumerate(search_results, 1):
             context_pieces.append(
                 {
-                    'text': f"[Source {i} - Page title : {result.title}]\nPage link : {result.link}\nPage extract : {result.text.strip()}\nPage tables content (optionnal): {result.tables}",
+                    'text': f"[({result.source}) Source {i} - Page title : {result.title}]\nPage link : {result.link}\nPage extract : {result.text.strip()}\n",
                     'title': result.title,
                     'link': result.link,
-                    'score': result.score}
+                    'score': result.score,
+                    'source': result.source}
             )
 
         context = "\n\n".join([piece['text'] for piece in context_pieces])
@@ -160,7 +152,7 @@ class LocalLLMBridge:
             print(f"🤖 Generating answer with local LLM ({self.generator.model_name})...")
 
             # --- Call the Generator's generation method ---
-            answer = self.generator.ask(final_prompt)
+            answer = self.generator.ask(final_prompt, MAX_TOKEN_REFINEMENT, TEMP_GENERATION)
 
         except Exception as e:
             answer = f"Error generating answer: {str(e)}"
@@ -170,7 +162,7 @@ class LocalLLMBridge:
         return {
             'question': question,
             'answer': answer,
-            'sources': [{'title': piece['title'], 'link': piece['link'], 'score': piece['score']} for piece in
+            'sources': [{'source': piece['source'], 'title': piece['title'], 'link': piece['link'], 'score': piece['score']} for piece in
                         context_pieces],
             'model_used': self.model_name
         }

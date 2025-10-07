@@ -8,7 +8,6 @@ import requests
 
 from config.logging_config import logger
 from llm.base_adapter import LLMAdapter
-from config.settings import ENRICH_WITH_NEIGHBORS
 
 
 class OllamaModelAdapter(LLMAdapter):
@@ -117,7 +116,7 @@ class OllamaModelAdapter(LLMAdapter):
         self.is_ready = self.check_ollama_status()
         return self.is_ready
 
-    def ask(self, prompt: str) -> str:
+    def ask(self, prompt: str,  max_token: int = 500, temp: float = 0.2) -> str:
         """
         Public method for the Bridge to call for direct LLM generation.
         Delegates to the internal _generate method.
@@ -125,9 +124,9 @@ class OllamaModelAdapter(LLMAdapter):
         if not self.is_ready:
             raise RuntimeError(f"Ollama model '{self.model_name}' is not set up or ready.")
 
-        return self._generate(prompt)
+        return self._generate(prompt, max_token, temp)
 
-    def _generate(self, prompt: str) -> str:
+    def _generate(self, prompt: str, max_token: int = 500, temp: float = 0.2) -> str:
         """
         Abstract core method implementation: sends a prompt to the Ollama /api/generate endpoint.
         Args:
@@ -141,7 +140,7 @@ class OllamaModelAdapter(LLMAdapter):
             "model": self.model_name,
             "prompt": prompt,
             "stream": False,  # Request the full response at once
-            "options": {"temperature": 0.2, "num_predict": 500}
+            "options": {"temperature": temp, "num_predict": max_token}
         }
 
         response = requests.post(
