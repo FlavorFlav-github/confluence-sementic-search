@@ -22,9 +22,13 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Set branch name lowercase
+        id: vars
+        run: echo "BRANCH_NAME=$(echo ${GITHUB_REF_NAME} | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
+  
       - name: Build and push API image
         uses: docker/build-push-action@v3
         with:
           context: .
           push: true
-          tags: ghcr.io/${{ github.repository_owner }}/fastapi_app:latest
+          tags: ghcr.io/flavorflav-github/fastapi_app:${{ env.BRANCH_NAME }}
