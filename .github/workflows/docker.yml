@@ -2,7 +2,9 @@ name: Build and Publish Docker Images
 
 on:
   push:
-    branches: [ "main" ]   # or "master", adjust to your default branch
+    branches: 
+      - "main"
+      - "add-dockerization"
   workflow_dispatch:       # allows manual trigger
 
 jobs:
