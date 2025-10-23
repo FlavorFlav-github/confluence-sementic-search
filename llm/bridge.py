@@ -157,7 +157,7 @@ class LocalLLMBridge:
             return self.cache.get_cache_stats(self.collection_name)
         return {'cache_enabled': False}
 
-    def ask(self, question: str, top_k: int = 10, final_top_k: int = 3, score_threshold: float = 0, use_cache: bool = True) -> Dict:
+    def ask(self, question: str, top_k: int = 10, final_top_k: int = 3, score_threshold: float = 0, use_cache: bool = True, use_hybrid: bool = True) -> Dict:
         """
         Performs the full RAG process using the Refiner for query expansion and 
         the Generator for the final answer.
@@ -201,7 +201,11 @@ class LocalLLMBridge:
             refined_queries = [question]
 
         # Step 1: Perform semantic search using the refined queries
-        search_results = self.search.hybrid_search(refined_queries, top_k=top_k, final_top_k=final_top_k, score_threashold=score_threshold)
+        if use_hybrid:
+            search_results = self.search.hybrid_search(refined_queries, top_k=top_k, final_top_k=final_top_k, score_threashold=score_threshold)
+        else:
+            search_results = self.search.semantic_search(refined_queries, top_k=top_k, final_top_k=final_top_k,
+                                                       score_threashold=score_threshold)
         if not search_results:
             return {'question': question, 'answer': "I couldn't find any relevant information.", 'sources': [],
                     'model_used': self.model_name}

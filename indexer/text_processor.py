@@ -1,4 +1,5 @@
 import json
+import os
 import re
 import unicodedata
 from uuid import uuid4
@@ -12,6 +13,11 @@ from nltk import WordNetLemmatizer, sent_tokenize
 from nltk.corpus import stopwords, wordnet
 
 # --- NLTK Data Check and Download ---
+
+NLTK_DATA_DIR = os.getenv("NLTK_DATA_DIR", "/root/nltk_data")
+os.makedirs(NLTK_DATA_DIR, exist_ok=True)
+nltk.data.path.append(NLTK_DATA_DIR)
+
 # This block ensures all necessary NLTK data files (for tokenization, stop words, and lemmatization)
 # are present before the class is used.
 try:

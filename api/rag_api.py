@@ -2,6 +2,7 @@
 API Layer for Confluence RAG system.
 Exposes endpoints for asking questions against the Confluence index.
 """
+import json
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -33,6 +34,10 @@ class QuestionRequest(BaseModel):
     search_min_score: Optional[float] = SOURCE_THRESHOLD
     llm_top_k: Optional[int] = RERANK_TOP_K
 
+class SearchRequest(BaseModel):
+    question: str
+    max_sources: Optional[int] = DEFAULT_TOP_K
+    max_result: Optional[int] = RERANK_TOP_K
 
 class Source(BaseModel):
     title: str
@@ -125,7 +130,7 @@ def health_check():
     )
 
 
-@app.post("/ask", response_model=AnswerResponse, tags=["RAG"])
+@app.post("/v1/rag/ask", response_model=AnswerResponse, tags=["RAG"])
 def ask_question(request: QuestionRequest):
     model_select = request.model if request.model is not None else LLM_MODEL_GENERATION
     if model_select not in LLMConfig.AVAILABLE_MODELS:
@@ -169,10 +174,33 @@ def ask_question(request: QuestionRequest):
         logger.error(f"Error during RAG query: {e}")
         raise HTTPException(status_code=500, detail="Error processing question")
 
-@app.get("/models", response_model=AnswerResponse, tags=["RAG"])
+@app.get("/v1/rag/models", tags=["RAG"])
 def get_available_models():
     return LLMConfig.AVAILABLE_MODELS
 
-@app.get("/rag/stats", tags=["VectorDB"])
+@app.post("/v1/rag/search", tags=["RAG"])
+def semantic_search(request: QuestionRequest):
+    query = [request.question]
+    max_sources = request.max_sources
+    max_result = request.max_result
+
+    if max_result > 5:
+        return HTTPException(status_code=400, detail="The maximum number of results cannot exceed 5")
+    if max_sources > 5:
+        return HTTPException(status_code=400, detail="The maximum number of sources to sort cannot exceed 20")
+
+    results = search_system.hybrid_search(query)
+    out = []
+    for res in results:
+        out.append({
+            "title": res.title,
+            "score": res.score,
+            "link": res.link,
+            "last_updated": res.last_updated
+        })
+    out.sort(key=lambda x: x["score"], reverse=True)
+    return out
+
+@app.get("/v1/rag/stats", tags=["VectorDB"])
 def rag_stats():
     return get_qdrant_stats(qdrant)

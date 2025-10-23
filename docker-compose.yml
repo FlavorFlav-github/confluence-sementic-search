@@ -15,6 +15,8 @@ services:
     volumes:
       - ./config/rag_config.yml:/app/config/rag_config.yml:ro
       - ollama_models:/root/.ollama
+      - rag_data:/app/data
+      - nltk_data:/root/nltk_data
     ports:
       - "${RAG_API_PORT:-8000}:8000"
     depends_on:
@@ -30,7 +32,7 @@ services:
       REDIS_PORT: ${REDIS_PORT:-6379}
       NVIDIA_VISIBLE_DEVICES: all
       NVIDIA_DRIVER_CAPABILITIES: compute,utility
-      OLLAMA_MODELS: gemma2:2b-instruct-q4_K_M #Default model to download
+      OLLAMA_MODELS: ${OLLAMA_MODELS}
     env_file:
       - .env
     command: ["python", "-m", "main_api"]
@@ -55,6 +57,8 @@ services:
     volumes:
       - ./config/rag_config.yml:/app/config/rag_config.yml:ro
       - ollama_models:/root/.ollama
+      - rag_data:/app/data
+      - nltk_data:/root/nltk_data
     env_file:
       - .env
     environment:
@@ -100,3 +104,5 @@ volumes:
   qdrant_storage:
   redis_data:
   ollama_models:
+  rag_data:
+  nltk_data:

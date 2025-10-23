@@ -20,6 +20,8 @@ REDIS_HOST = get_secret("REDIS_HOST", "localhost")
 REDIS_PORT = get_secret("REDIS_PORT", "6379")
 REDIS_CACHE_TTL_DAYS = min(int(get_secret("REDIS_CACHE_TTL_DAYS", "5")), 10)
 
+NLTK_DATA_DIR = get_secret("NLTK_DATA_DIR", "/root/nltk_data")
+
 OVERRIDE_INDEXING = get_secret("OVERRID_INDEXING", "false")
 if OVERRIDE_INDEXING == "true":
     OVERRIDE_INDEXING = True
