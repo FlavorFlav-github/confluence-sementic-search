@@ -7,16 +7,17 @@ os.environ['PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION'] = "python"
 # -------------------------
 # 1. Enhanced Config
 # -------------------------
-DATA_SOURCE_BASE_URL = get_secret("DATA_SOURCE_BASE_URL")
-DATA_SOURCE_API_TOKEN = get_secret("DATA_SOURCE_API_TOKEN")
-DATA_SOURCE_ROOT_PAGE_ID = get_secret("DATA_SOURCE_ROOT_PAGE_ID", "").split(",")
-DATA_SOURCE_NAME = get_secret("DATA_SOURCE_NAME")
-
 QDRANT_BASE_URL = get_secret("QDRANT_BASE_URL")
 QDRANT_PORT = os.getenv("QDRANT_PORT")
 QDRANT_URL = f"{QDRANT_BASE_URL}:{QDRANT_PORT}"
 
 COLLECTION_NAME = get_secret("QDRANT_COLLECTION_NAME")
+
+PATH_CONFIG_RAG = get_secret("PATH_CONFIG_RAG", "/app/config/rag_config.yml")
+
+REDIS_HOST = get_secret("REDIS_HOST", "localhost")
+REDIS_PORT = get_secret("REDIS_PORT", "6379")
+REDIS_CACHE_TTL_DAYS = min(int(get_secret("REDIS_CACHE_TTL_DAYS", "5")), 10)
 
 # Enhanced embedding configuration
 SENTENCE_TRANSFORMER = 'all-mpnet-base-v2'

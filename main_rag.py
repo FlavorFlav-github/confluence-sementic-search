@@ -6,7 +6,10 @@ import os
 
 # Import custom modules
 from config.logging_config import logger
-from config.settings import LLM_MODEL_REFINE, LLM_MODEL_GENERATION, LLM_BACKEND_TYPE_GENERATION, LLM_BACKEND_TYPE_REFINEMENT, DEFAULT_TOP_K, RERANK_TOP_K, SOURCE_THRESHOLD
+from config.settings import (LLM_MODEL_REFINE, LLM_MODEL_GENERATION,
+                             LLM_BACKEND_TYPE_GENERATION, LLM_BACKEND_TYPE_REFINEMENT,
+                             DEFAULT_TOP_K, RERANK_TOP_K, SOURCE_THRESHOLD,
+                             REDIS_HOST, REDIS_PORT, REDIS_CACHE_TTL_DAYS)
 from indexer.hybrid_index import HybridSearchIndex
 from indexer.qdrant_utils import check_and_start_qdrant
 from llm.bridge import LocalLLMBridge
@@ -48,7 +51,10 @@ def main():
         generation_model_key=LLM_MODEL_GENERATION,
         refinement_model_key=LLM_MODEL_REFINE,
         generation_model_backend_type=LLM_BACKEND_TYPE_GENERATION,
-        refinement_model_backend_type=LLM_BACKEND_TYPE_REFINEMENT
+        refinement_model_backend_type=LLM_BACKEND_TYPE_REFINEMENT,
+        redis_host=REDIS_HOST,
+        redis_port=REDIS_PORT,
+        redis_cache_ttl_days=REDIS_CACHE_TTL_DAYS
     )
     
     # 5. Setup the LLM model (e.g., download model weights, initialize framework)

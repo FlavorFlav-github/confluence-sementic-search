@@ -12,13 +12,13 @@ from typing import List, Optional
 from config.logging_config import logger
 from config.settings import LLM_MODEL_GENERATION, LLM_MODEL_REFINE, \
     LLM_BACKEND_TYPE_GENERATION, LLM_BACKEND_TYPE_REFINEMENT, DEFAULT_TOP_K, RERANK_TOP_K, SOURCE_THRESHOLD, \
-    API_ALLOWED_ORIGINS
+    API_ALLOWED_ORIGINS, REDIS_HOST, REDIS_PORT, REDIS_CACHE_TTL_DAYS
 from indexer.hybrid_index import HybridSearchIndex
 from indexer.qdrant_utils import check_and_start_qdrant
 from llm.bridge import LocalLLMBridge
 from llm.config import LLMConfig
 from search.advanced_search import AdvancedSearch
-
+from indexer.qdrant_utils import get_qdrant_stats
 
 # ---------------------------
 # Request / Response Schemas
@@ -131,7 +131,10 @@ def ask_question(request: QuestionRequest):
         generation_model_key=LLM_MODEL_GENERATION,
         refinement_model_key=LLM_MODEL_REFINE,
         generation_model_backend_type=LLM_BACKEND_TYPE_GENERATION,
-        refinement_model_backend_type=LLM_BACKEND_TYPE_REFINEMENT
+        refinement_model_backend_type=LLM_BACKEND_TYPE_REFINEMENT,
+        redis_host=REDIS_HOST,
+        redis_port=REDIS_PORT,
+        redis_cache_ttl_days=REDIS_CACHE_TTL_DAYS
     )
     rag_system.setup_model()
     if rag_system is None:
@@ -160,3 +163,7 @@ def ask_question(request: QuestionRequest):
     except Exception as e:
         logger.error(f"Error during RAG query: {e}")
         raise HTTPException(status_code=500, detail="Error processing question")
+
+@app.get("/rag/stats")
+def rag_stats():
+    return get_qdrant_stats(qdrant)

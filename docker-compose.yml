@@ -1,24 +1,63 @@
 version: "3.9"
 
 services:
-  api:
+  rag-app:
     build: .
-    container_name: fastapi_app
+    container_name: rag-app
+    volumes:
+      - ./config/rag_config.yaml:/app/config/rag_config.yaml:ro
     ports:
-      - "8000:8000"
+      - "${RAG_API_PORT:-8000}:8000"
     depends_on:
-      - qdrant
+      - rag-qdrant
     environment:
-      QDRANT_HOST: qdrant
-      QDRANT_PORT: 6333
+      QDRANT_HOST: ${QDRANT_HOST:-qdrant}
+      QDRANT_PORT: ${QDRANT_PORT:-6333}
+      RAG_CONFIG_PATH: /app/config/rag_config.yaml
+    env_file:
+      - .env
 
-  qdrant:
+  rag-indexer:
+    image: flavorflav/rag-app:latest
+    container_name: rag-indexer
+    depends_on:
+      - rag-qdrant
+    volumes:
+      - ./config/rag_config.yaml:/app/config/rag_config.yaml:ro
+    env_file:
+      - .env
+    environment:
+      RAG_CONFIG_PATH: /app/config/rag_config.yaml
+    command: ["python", "-m", "main_indexor"]  # override CMD to run the loop
+    restart: unless-stopped
+
+  rag-qdrant:
     image: qdrant/qdrant:latest
-    container_name: qdrant
+    container_name: rag-qdrant
+    env_file:
+      - .env
     ports:
-      - "6333:6333"
+      - "${QDRANT_PORT:-6333}:6333"
     volumes:
       - qdrant_storage:/qdrant/storage
+    restart: unless-stopped
+
+  rag-cache:
+    image: redis:7-alpine
+    container_name: rag-cache
+    env_file:
+      - .env
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
 
 volumes:
   qdrant_storage:
+  redis_data:

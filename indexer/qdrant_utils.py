@@ -8,6 +8,7 @@ from qdrant_client.http.models import FieldCondition, MatchValue, Filter
 from config import settings
 from config.logging_config import logger
 from config.settings import COLLECTION_NAME
+from collections import defaultdict
 
 
 def start_qdrant():
@@ -109,13 +110,6 @@ def check_and_start_qdrant(timeout: int = 60, retry_delay: int = 5) -> QdrantCli
         logger.error(f"Failed to connect to or start Qdrant: {e}")
         # Exit the application as the required service is unavailable
         exit(1)
-
-from typing import List, Dict, Any, Union
-from qdrant_client.models import Filter, FieldCondition, MatchValue
-import logging
-from collections import defaultdict
-
-logger = logging.getLogger(__name__)
 
 def get_documents_by_metadata(
     client,
@@ -225,6 +219,58 @@ def get_documents_by_metadata(
             return {"total_documents": 0, "unique_pages": 0, "detail": {}}
         return []
 
+
+from qdrant_client import QdrantClient
+from typing import List, Dict, Any
+
+
+def get_qdrant_stats(client) -> List[Dict[str, Any]]:
+    """
+    Get comprehensive information about all collections in Qdrant.
+
+    Args:
+        client: Qdratnt client instance.
+
+    Returns:
+        List of dictionaries containing detailed information about each collection
+    """
+    # Get all collections
+    collections = client.get_collections()
+
+    collections_data = []
+
+    for collection in collections.collections:
+        collection_name = collection.name
+
+        # Get detailed collection information
+        collection_info = client.get_collection(collection_name=collection_name)
+
+        # Extract and organize the information
+        collection_dict = {
+            "name": collection_name,
+            "status": collection_info.status,
+            "optimizer_status": collection_info.optimizer_status,
+            "points_count": collection_info.points_count,
+            "vectors_count": collection_info.vectors_count,
+            "segments_count": collection_info.segments_count,
+            "indexed_vectors_count": collection_info.indexed_vectors_count,
+            "config": {
+                "params": {
+                    "vectors": collection_info.config.params.vectors,
+                    "shard_number": collection_info.config.params.shard_number,
+                    "replication_factor": collection_info.config.params.replication_factor,
+                    "write_consistency_factor": collection_info.config.params.write_consistency_factor,
+                },
+                "hnsw_config": collection_info.config.hnsw_config,
+                "optimizer_config": collection_info.config.optimizer_config,
+                "wal_config": collection_info.config.wal_config,
+            },
+            "payload_schema": collection_info.payload_schema if hasattr(collection_info, 'payload_schema') else {}
+        }
+
+        collections_data.append(collection_dict)
+
+    return collections_data
 
 
 # TODO : Remove those for production
