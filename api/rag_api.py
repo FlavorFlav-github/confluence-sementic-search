@@ -8,17 +8,19 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional
 
+from indexer.qdrant_utils import get_qdrant_client
+
 # Import your modules
 from config.logging_config import logger
 from config.settings import LLM_MODEL_GENERATION, LLM_MODEL_REFINE, \
     LLM_BACKEND_TYPE_GENERATION, LLM_BACKEND_TYPE_REFINEMENT, DEFAULT_TOP_K, RERANK_TOP_K, SOURCE_THRESHOLD, \
-    API_ALLOWED_ORIGINS, REDIS_HOST, REDIS_PORT, REDIS_CACHE_TTL_DAYS
+    API_ALLOWED_ORIGINS, REDIS_HOST, REDIS_PORT, REDIS_CACHE_TTL_DAYS, QDRANT_URL
 from indexer.hybrid_index import HybridSearchIndex
-from indexer.qdrant_utils import check_and_start_qdrant
 from llm.bridge import LocalLLMBridge
 from llm.config import LLMConfig
 from search.advanced_search import AdvancedSearch
 from indexer.qdrant_utils import get_qdrant_stats
+from llm.config import LLMConfig
 
 # ---------------------------
 # Request / Response Schemas
@@ -65,7 +67,7 @@ app.add_middleware(
 logger.info("Initializing Confluence RAG API...")
 
 try:
-    qdrant = check_and_start_qdrant()
+    qdrant = get_qdrant_client(QDRANT_URL)
     hybrid_search_index = HybridSearchIndex()
     hybrid_search_index.load_tfidf()
     search_system = AdvancedSearch(qdrant, hybrid_search_index)
@@ -125,10 +127,13 @@ def health_check():
 
 @app.post("/ask", response_model=AnswerResponse, tags=["RAG"])
 def ask_question(request: QuestionRequest):
+    model_select = request.model if request.model is not None else LLM_MODEL_GENERATION
+    if model_select not in LLMConfig.AVAILABLE_MODELS:
+        raise HTTPException(status_code=404, detail="Model not available")
     """Ask a question against the indexed Confluence documentation"""
     rag_system = LocalLLMBridge(
         search_system=search_system,
-        generation_model_key=LLM_MODEL_GENERATION,
+        generation_model_key=model_select,
         refinement_model_key=LLM_MODEL_REFINE,
         generation_model_backend_type=LLM_BACKEND_TYPE_GENERATION,
         refinement_model_backend_type=LLM_BACKEND_TYPE_REFINEMENT,
@@ -164,6 +169,10 @@ def ask_question(request: QuestionRequest):
         logger.error(f"Error during RAG query: {e}")
         raise HTTPException(status_code=500, detail="Error processing question")
 
-@app.get("/rag/stats")
+@app.get("/models", response_model=AnswerResponse, tags=["RAG"])
+def get_available_models():
+    return LLMConfig.AVAILABLE_MODELS
+
+@app.get("/rag/stats", tags=["VectorDB"])
 def rag_stats():
     return get_qdrant_stats(qdrant)

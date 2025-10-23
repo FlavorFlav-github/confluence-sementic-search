@@ -9,9 +9,9 @@ from config.logging_config import logger
 from config.settings import (LLM_MODEL_REFINE, LLM_MODEL_GENERATION,
                              LLM_BACKEND_TYPE_GENERATION, LLM_BACKEND_TYPE_REFINEMENT,
                              DEFAULT_TOP_K, RERANK_TOP_K, SOURCE_THRESHOLD,
-                             REDIS_HOST, REDIS_PORT, REDIS_CACHE_TTL_DAYS)
+                             REDIS_HOST, REDIS_PORT, REDIS_CACHE_TTL_DAYS, QDRANT_URL)
 from indexer.hybrid_index import HybridSearchIndex
-from indexer.qdrant_utils import check_and_start_qdrant
+from indexer.qdrant_utils import get_qdrant_client
 from llm.bridge import LocalLLMBridge
 from llm.config import LLMConfig
 from search.advanced_search import AdvancedSearch
@@ -26,7 +26,7 @@ def main():
 
     # 1. Initialize and connect to Qdrant (vector database)
     try:
-        qdrant = check_and_start_qdrant()
+        qdrant = get_qdrant_client(QDRANT_URL)
     except Exception as e:
         logger.error(f"Failed to initialize Qdrant. Exiting. Error: {e}")
         return

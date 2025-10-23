@@ -7,11 +7,12 @@ os.environ['PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION'] = "python"
 # -------------------------
 # 1. Enhanced Config
 # -------------------------
-QDRANT_BASE_URL = get_secret("QDRANT_BASE_URL")
-QDRANT_PORT = os.getenv("QDRANT_PORT")
-QDRANT_URL = f"{QDRANT_BASE_URL}:{QDRANT_PORT}"
+QDRANT_HOST = get_secret("QDRANT_HOST", "qdrant")
+QDRANT_BASE_URL = get_secret("QDRANT_BASE_URL", "http://localhost")
+QDRANT_PORT = os.getenv("QDRANT_PORT", "6333")
+QDRANT_URL = f"http://{QDRANT_HOST}:{QDRANT_PORT}"
 
-COLLECTION_NAME = get_secret("QDRANT_COLLECTION_NAME")
+COLLECTION_NAME = get_secret("QDRANT_COLLECTION_NAME", "default_collection")
 
 PATH_CONFIG_RAG = get_secret("PATH_CONFIG_RAG", "/app/config/rag_config.yml")
 
@@ -19,6 +20,13 @@ REDIS_HOST = get_secret("REDIS_HOST", "localhost")
 REDIS_PORT = get_secret("REDIS_PORT", "6379")
 REDIS_CACHE_TTL_DAYS = min(int(get_secret("REDIS_CACHE_TTL_DAYS", "5")), 10)
 
+OVERRIDE_INDEXING = get_secret("OVERRID_INDEXING", "false")
+if OVERRIDE_INDEXING == "true":
+    OVERRIDE_INDEXING = True
+elif OVERRIDE_INDEXING == "false":
+    OVERRIDE_INDEXING = False
+else:
+    OVERRIDE_INDEXING = False
 # Enhanced embedding configuration
 SENTENCE_TRANSFORMER = 'all-mpnet-base-v2'
 EMBEDDING_SIZE = 768

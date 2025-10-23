@@ -8,7 +8,7 @@ def load_rag_config():
     Environment variables in the form ${VAR} are automatically expanded.
     """
 
-    config_path = os.getenv("RAG_CONFIG_PATH", "/app/config/rag_config.yaml")
+    config_path = os.getenv("RAG_CONFIG_PATH", "/app/config/rag_config.yml")
 
     if not os.path.exists(config_path):
         raise FileNotFoundError(f"❌ RAG config not found at {config_path}")
@@ -57,6 +57,6 @@ def load_rag_config():
 
     print(f"✅ Loaded {len(sources)} sources from config:")
     for src in sources:
-        print(f"   • {src['name']} ({src['type']}) → namespace: {src.get('vector_namespace')}")
+        print(f"   • {src['name']} ({src['type']})")
 
     return sources

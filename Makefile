@@ -4,7 +4,7 @@
 # ------------------------------------------------------------
 
 # Default config file path
-CONFIG ?= ./config/rag_config.yaml
+CONFIG ?= ./config/rag_config.yml
 
 # Default docker-compose file
 COMPOSE_FILE := docker-compose.yml

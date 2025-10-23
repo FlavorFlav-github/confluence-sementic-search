@@ -6,20 +6,23 @@ import time
 
 from sentence_transformers import SentenceTransformer
 
+from cache.redis_cache_helper import RAGCacheHelper
 # Import custom modules
 from config.logging_config import logger
-from config.settings import CHUNK_SIZE_LIMIT, MIN_CHUNK_SIZE, \
+from config.settings import (CHUNK_SIZE_LIMIT, MIN_CHUNK_SIZE, \
     CHUNK_OVERLAP, EMBEDDING_SIZE, \
     SENTENCE_TRANSFORMER, COLLECTION_NAME, \
-    INDEXING_BATCH_SIZE, INDEXING_MAX_CONCURRENT
+    INDEXING_BATCH_SIZE, INDEXING_MAX_CONCURRENT, QDRANT_URL,OVERRIDE_INDEXING,
+                             REDIS_HOST, REDIS_CACHE_TTL_DAYS, REDIS_PORT)
+
 from indexer.universal_indexer import UniversalIndexer
 from indexer.hybrid_index import HybridSearchIndex
-from indexer.qdrant_utils import check_and_start_qdrant
+from indexer.qdrant_utils import get_qdrant_client
 from indexer.text_processor import EnhancedTextProcessor
 from config.config_loader import load_rag_config
 
 # Configuration flag: Set to True to completely wipe and rebuild the index (Qdrant collection and TF-IDF model)
-RESET_INDEXOR = True
+RESET_INDEXOR = OVERRIDE_INDEXING
 INTERVAL_SECONDS = 6 * 60 * 60  # 6 hours
 
 def main():
@@ -27,14 +30,14 @@ def main():
     Main execution function. Initializes the vector database connection, 
     loads/initializes models, and starts the indexing process.
     """
-    logger.info("Starting Confluence Indexing Pipeline...")
+    logger.info(f"Starting Confluence Indexing Pipeline with reset indexor as {RESET_INDEXOR}...")
 
     print("🔧 Loading RAG configuration...")
     sources = load_rag_config()
 
     # 1. Initialize and connect to Qdrant (starts container if needed)
     try:
-        qdrant = check_and_start_qdrant()
+        qdrant = get_qdrant_client(QDRANT_URL)
     except Exception as e:
         logger.error(f"Failed to initialize Qdrant. Exiting. Error: {e}")
         return
@@ -50,6 +53,18 @@ def main():
 
     # 4. Initialize Text Processor with chunking configurations
     text_processor = EnhancedTextProcessor(CHUNK_SIZE_LIMIT, MIN_CHUNK_SIZE, CHUNK_OVERLAP)
+
+    # 5. Initialize cache REDIS
+    cache = RAGCacheHelper(
+        host=REDIS_HOST,
+        port=REDIS_PORT,
+        ttl_days=REDIS_CACHE_TTL_DAYS
+    )
+    cache.check_and_start_redis()
+    if cache.health_check():
+        logger.info("✅ Redis cache initialized and healthy")
+    else:
+        logger.warning("⚠️ Redis health check failed, disabling cache")
 
     for src in sources:
         print(f"📚 Initializing source: {src['name']} ({src['type']})")
@@ -71,7 +86,8 @@ def main():
             data_source_options=data_source_options,
             root_page_ids=root_ids,
             collection_name=COLLECTION_NAME,
-            embedding_size=EMBEDDING_SIZE
+            embedding_size=EMBEDDING_SIZE,
+            redis_client=cache
         )
 
         # Start the indexing process (recursive fetching, chunking, embedding, and upserting)

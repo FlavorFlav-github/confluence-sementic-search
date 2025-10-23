@@ -88,14 +88,14 @@ class LocalLLMBridge:
                 f"Unknown backend type: {refinement_model_backend_type}. Must be one of: {list(self.AVAILABLE_ADAPTERS.keys())}")
 
         # 1. Get model names from config
-        if generation_model_key not in LLMConfig.RECOMMENDED_MODELS.get(generation_model_backend_type, {}):
+        if generation_model_key not in LLMConfig.AVAILABLE_MODELS:
             raise ValueError(f"Generator model key '{generation_model_key}' not found for backend '{generation_model_backend_type}'.")
 
-        if refinement_model_key not in LLMConfig.RECOMMENDED_MODELS.get(refinement_model_backend_type, {}):
+        if refinement_model_key not in LLMConfig.AVAILABLE_MODELS:
             raise ValueError(f"Refiner model key '{refinement_model_key}' not found for backend '{refinement_model_backend_type}'.")
 
-        gen_model_name = LLMConfig.RECOMMENDED_MODELS[generation_model_backend_type][generation_model_key]["name"]
-        ref_model_name = LLMConfig.RECOMMENDED_MODELS[refinement_model_backend_type][refinement_model_key]["name"]
+        gen_model_name = LLMConfig.AVAILABLE_MODELS[generation_model_key]["name"]
+        ref_model_name = LLMConfig.AVAILABLE_MODELS[refinement_model_key]["name"]
 
         # 2. Instantiate Adapters
         # The adapter class is expected to implement LLMAdapter

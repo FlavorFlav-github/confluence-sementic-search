@@ -16,12 +16,14 @@ from nltk.corpus import stopwords, wordnet
 # are present before the class is used.
 try:
     nltk.data.find('tokenizers/punkt')
+    nltk.data.find('tokenizers/punkt_tab')
     nltk.data.find('corpora/stopwords')
     nltk.data.find('corpora/wordnet')
 except LookupError:
     print("NLTK data not found. Downloading...")
     # Punkt is used for sentence tokenization
     nltk.download('punkt')
+    nltk.download('punkt_tab')
     # Stopwords is used for filtering common words
     nltk.download('stopwords')
     # WordNet is used for lemmatization
