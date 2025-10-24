@@ -59,7 +59,7 @@ jobs:
           sed -i '/deploy:/,/capabilities:/d' docker-compose.yml
 
       - name: Start services
-        run: docker compose up -d
+        run: docker compose up
         env:
           RAG_API_PORT: 8000
           QDRANT_PORT: 6333
