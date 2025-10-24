@@ -11,16 +11,17 @@ jobs:
   validate:
     name: Validate Docker Build and Health
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Docker Buildx
+      - name: Set up Docker Buildx with container driver
         uses: docker/setup-buildx-action@v3
         with:
           driver: docker-container
+          buildkitd-flags: --debug
 
       - name: Cache Docker layers
         uses: actions/cache@v3
@@ -32,7 +33,7 @@ jobs:
 
       - name: Build Docker image with cache
         run: |
-          docker build \
+          docker buildx build \
             --tag rag-app-test \
             --cache-from=type=local,src=/tmp/.buildx-cache \
             --cache-to=type=local,dest=/tmp/.buildx-cache-new,mode=max \
@@ -43,7 +44,7 @@ jobs:
           rm -rf /tmp/.buildx-cache || true
           mv /tmp/.buildx-cache-new /tmp/.buildx-cache
 
-      - name: Patch docker compose to use prebuilt image
+      - name: Patch docker-compose to use prebuilt image
         run: |
           sed -i 's|build: \.|# build disabled for CI|g' docker-compose.yml
           sed -i 's|image: flavorflav/rag-app:latest|image: rag-app-test|g' docker-compose.yml
@@ -55,7 +56,7 @@ jobs:
           sed -i '/deploy:/,/capabilities:/d' docker-compose.yml
 
       - name: Start services
-        run: docker compose up -d
+        run: docker-compose up -d
         env:
           RAG_API_PORT: 8000
           QDRANT_PORT: 6333
@@ -77,20 +78,20 @@ jobs:
           done
           echo "status=failed" >> $GITHUB_OUTPUT
           echo "❌ Health check failed after 150s"
-          docker compose logs
+          docker-compose logs
           exit 1
 
       - name: Verify Redis connectivity
         run: |
-          docker exec rag-cache redis-cli ping | grep -q PONG || (echo "❌ Redis not responding" && docker compose logs && exit 1)
+          docker exec rag-cache redis-cli ping | grep -q PONG || (echo "❌ Redis not responding" && docker-compose logs && exit 1)
 
       - name: Verify Qdrant readiness
         run: |
-          curl -fs http://localhost:6333/readyz || (echo "❌ Qdrant not ready" && docker compose logs && exit 1)
+          curl -fs http://localhost:6333/readyz || (echo "❌ Qdrant not ready" && docker-compose logs && exit 1)
 
       - name: Clean up
         if: always()
-        run: docker compose down -v
+        run: docker-compose down -v
 
       - name: Post PR status comment
         if: github.event_name == 'pull_request'
