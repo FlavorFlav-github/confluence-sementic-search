@@ -30,4 +30,4 @@ jobs:
         with:
           context: .
           push: true
-          tags: ghcr.io/flavorflav-github/fastapi_app:${{ env.BRANCH_NAME }}
+          tags: ghcr.io/flavorflav-github/rag-app:${{ env.BRANCH_NAME }}
