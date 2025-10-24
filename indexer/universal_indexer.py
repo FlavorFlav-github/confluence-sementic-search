@@ -39,11 +39,12 @@ class UniversalIndexer:
     def __init__(self, qdrant_client: QdrantClient, embedding_model: SentenceTransformer,
                  text_processor: EnhancedTextProcessor, hybrid_index: HybridSearchIndex,data_source_name: str,
                  data_source_options: Dict[str, Any], root_page_ids: List[str],
-                 collection_name: str, embedding_size: int):
+                 collection_name: str, embedding_size: int, redis_client=None):
         self.qdrant = qdrant_client
         self.model_embed = embedding_model
         self.text_processor = text_processor
         self.hybrid_index = hybrid_index
+        self.redis_client = redis_client
         self.data_source_name = data_source_name
         self.data_adapter = DATA_SOURCE_REF.get(data_source_name, None)
         if self.data_adapter is None:
@@ -254,6 +255,11 @@ class UniversalIndexer:
     def index_pages(self, reset: bool = False, batch_size: int = 500, max_concurrent: int = 20) -> None:
         """Main entry point for indexing"""
         asyncio.run(self._index_pages_async(reset, batch_size, max_concurrent))
+
+        if self.redis_client:
+            # Invalidate the cache after the synchronization is done
+            _ = self.redis_client.invalidate_collection_cache(self.COLLECTION_NAME)
+            self.redis_client.set_collection_update_time(self.COLLECTION_NAME)
 
     def _delete_old_chunks(self, page_id: str) -> None:
         """Delete old chunks for a page"""

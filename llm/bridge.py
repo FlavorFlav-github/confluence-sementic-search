@@ -1,12 +1,15 @@
 # File: bridge.txt
 from config.logging_config import logger
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 
 from llm.base_adapter import LLMAdapter
 from llm.config import LLMConfig  # Assuming this contains RECOMMENDED_MODELS
 from llm.gemini_adapter import GeminiModelAdapter
 from llm.ollama_adapter import OllamaModelAdapter
-from config.settings import LLM_MAX_TOKEN_GENERATION, LLM_TEMP_GENERATION, LLM_MAX_TOKEN_REFINEMENT, LLM_TEMP_REFINEMENT, ENRICH_WITH_NEIGHBORS
+from config.settings import (LLM_MAX_TOKEN_GENERATION, LLM_TEMP_GENERATION,
+                             LLM_MAX_TOKEN_REFINEMENT, LLM_TEMP_REFINEMENT,
+                             ENRICH_WITH_NEIGHBORS, COLLECTION_NAME)
+from cache.redis_cache_helper import RAGCacheHelper
 
 # Assuming this constant is defined in config.settings
 # from config.settings import ENRICH_WITH_NEIGHBORS
@@ -31,7 +34,8 @@ class LocalLLMBridge:
     }
 
     def __init__(self, search_system: Any, generation_model_key: str, refinement_model_key: str,
-                 generation_model_backend_type: str = "ollama", refinement_model_backend_type: str = "ollama"):
+                 generation_model_backend_type: str = "ollama", refinement_model_backend_type: str = "ollama", enable_cache=True,
+                 redis_host='localhost', redis_port=6379, redis_cache_ttl_days=30):
         """
         Initializes the bridge with separate adapters for generation and refinement.
 
@@ -50,6 +54,27 @@ class LocalLLMBridge:
         self.refinement_model_backend_type = refinement_model_backend_type
         self.generation_model_key = generation_model_key
         self.refinement_model_key = refinement_model_key
+        self.collection_name = COLLECTION_NAME
+
+        # Initialize cache
+        self.cache_enabled = enable_cache
+        self.cache: Optional[RAGCacheHelper] = None
+
+        if self.cache_enabled:
+
+            self.cache = RAGCacheHelper(
+                host=redis_host,
+                port=redis_port,
+                ttl_days=redis_cache_ttl_days
+            )
+            self.cache.check_and_start_redis()
+            if self.cache.health_check():
+                logger.info("✅ Redis cache initialized and healthy")
+            else:
+                logger.warning("⚠️ Redis health check failed, disabling cache")
+                self.cache_enabled = False
+
+
 
         # --- Validate and Instantiate two distinct adapters ---
         AdapterClassGeneration = self.AVAILABLE_ADAPTERS.get(generation_model_backend_type)
@@ -63,14 +88,14 @@ class LocalLLMBridge:
                 f"Unknown backend type: {refinement_model_backend_type}. Must be one of: {list(self.AVAILABLE_ADAPTERS.keys())}")
 
         # 1. Get model names from config
-        if generation_model_key not in LLMConfig.RECOMMENDED_MODELS.get(generation_model_backend_type, {}):
+        if generation_model_key not in LLMConfig.AVAILABLE_MODELS:
             raise ValueError(f"Generator model key '{generation_model_key}' not found for backend '{generation_model_backend_type}'.")
 
-        if refinement_model_key not in LLMConfig.RECOMMENDED_MODELS.get(refinement_model_backend_type, {}):
+        if refinement_model_key not in LLMConfig.AVAILABLE_MODELS:
             raise ValueError(f"Refiner model key '{refinement_model_key}' not found for backend '{refinement_model_backend_type}'.")
 
-        gen_model_name = LLMConfig.RECOMMENDED_MODELS[generation_model_backend_type][generation_model_key]["name"]
-        ref_model_name = LLMConfig.RECOMMENDED_MODELS[refinement_model_backend_type][refinement_model_key]["name"]
+        gen_model_name = LLMConfig.AVAILABLE_MODELS[generation_model_key]["name"]
+        ref_model_name = LLMConfig.AVAILABLE_MODELS[refinement_model_key]["name"]
 
         # 2. Instantiate Adapters
         # The adapter class is expected to implement LLMAdapter
@@ -100,13 +125,66 @@ class LocalLLMBridge:
         self.is_ready = gen_success and ref_success
         return self.is_ready
 
-    def ask(self, question: str, top_k: int = 10, final_top_k: int = 3, score_threshold: float = 0) -> Dict:
+    def _update_collection_timestamp(self, timestamp: Optional[float] = None) -> None:
+        """
+        Update the collection's last update timestamp in Redis.
+        Call this after indexing new documents or updating the collection.
+
+        Args:
+            timestamp: Unix timestamp (if None, uses current time)
+        """
+        if self.cache_enabled and self.cache:
+            self.cache.set_collection_update_time(self.collection_name, timestamp)
+            logger.info(f"📝 Collection '{self.collection_name}' timestamp updated")
+
+    def invalidate_cache(self) -> int:
+        """
+        Manually invalidate all cached entries for the current collection.
+        Useful after major updates.
+
+        Returns:
+            Number of cache entries deleted
+        """
+        if self.cache_enabled and self.cache:
+            count = self.cache.invalidate_collection_cache(self.collection_name)
+            self._update_collection_timestamp()
+            return count
+        return 0
+
+    def get_cache_stats(self) -> Dict[str, Any]:
+        """Get cache statistics for the current collection."""
+        if self.cache_enabled and self.cache:
+            return self.cache.get_cache_stats(self.collection_name)
+        return {'cache_enabled': False}
+
+    def ask(self, question: str, top_k: int = 10, final_top_k: int = 3, score_threshold: float = 0, use_cache: bool = True, use_hybrid: bool = True) -> Dict:
         """
         Performs the full RAG process using the Refiner for query expansion and 
         the Generator for the final answer.
         """
         if not self.generator.is_ready or not self.refiner.is_ready:
             raise RuntimeError("One or both LLM models are not set up or ready.")
+
+        # --- CACHE CHECK ---
+        if self.cache_enabled and use_cache and self.cache:
+            # Get collection's last update time
+            collection_update_time = self.cache.get_collection_update_time(self.collection_name)
+
+            # Try to get cached answer
+            cached_answer = self.cache.get_cached_answer(
+                question=question,
+                collection_name=self.collection_name,
+                collection_last_update=collection_update_time,
+                top_k=top_k,
+                final_top_k=final_top_k,
+                score_threshold=score_threshold
+            )
+
+            if cached_answer:
+                logger.info(f"✅ Returning cached answer for: '{question[:50]}...'")
+                # Add cache indicator to response
+                cached_answer['from_cache'] = True
+                return cached_answer
 
         # Step 0: Refine query using the *Refiner* LLM
         try:
@@ -123,11 +201,15 @@ class LocalLLMBridge:
             refined_queries = [question]
 
         # Step 1: Perform semantic search using the refined queries
-        search_results = self.search.hybrid_search(refined_queries, top_k=top_k, final_top_k=final_top_k, score_threashold=score_threshold)
+        if use_hybrid:
+            search_results = self.search.hybrid_search(refined_queries, top_k=top_k, final_top_k=final_top_k, score_threashold=score_threshold)
+        else:
+            search_results = self.search.semantic_search(refined_queries, top_k=top_k, final_top_k=final_top_k,
+                                                       score_threashold=score_threshold)
         if not search_results:
             return {'question': question, 'answer': "I couldn't find any relevant information.", 'sources': [],
                     'model_used': self.model_name}
-        if ENRICH_WITH_NEIGHBORS > 0:
+        if ENRICH_WITH_NEIGHBORS > -2:
             search_results = self.search.merge_adjacent_chunks_qdrant(search_results, k=ENRICH_WITH_NEIGHBORS)
 
         # Step 3: Format Context for the LLM
@@ -158,11 +240,34 @@ class LocalLLMBridge:
             answer = f"Error generating answer: {str(e)}"
             # logger.error(f"LLM generation error with generator model: {e}")
 
-        # Step 5: Format and Return Results
-        return {
+        result = {
             'question': question,
             'answer': answer,
-            'sources': [{'source': piece['source'], 'title': piece['title'], 'link': piece['link'], 'score': piece['score']} for piece in
-                        context_pieces],
-            'model_used': self.model_name
+            'sources': [
+                {
+                    'source': piece['source'],
+                    'title': piece['title'],
+                    'link': piece['link'],
+                    'score': piece['score']
+                } for piece in context_pieces
+            ],
+            'model_used': self.model_name,
+            'from_cache': False
         }
+
+        #--- CACHE THE ANSWER ---
+        if self.cache_enabled and use_cache and self.cache:
+            try:
+                self.cache.cache_answer(
+                    question=question,
+                    answer=result,
+                    collection_name=self.collection_name,
+                    top_k=top_k,
+                    final_top_k=final_top_k,
+                    score_threshold=score_threshold
+                )
+            except Exception as e:
+                logger.warning(f"⚠️ Failed to cache answer: {e}")
+
+        # Step 5: Format and Return Results
+        return result

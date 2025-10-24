@@ -7,17 +7,28 @@ os.environ['PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION'] = "python"
 # -------------------------
 # 1. Enhanced Config
 # -------------------------
-DATA_SOURCE_BASE_URL = get_secret("DATA_SOURCE_BASE_URL")
-DATA_SOURCE_API_TOKEN = get_secret("DATA_SOURCE_API_TOKEN")
-DATA_SOURCE_ROOT_PAGE_ID = get_secret("DATA_SOURCE_ROOT_PAGE_ID", "").split(",")
-DATA_SOURCE_NAME = get_secret("DATA_SOURCE_NAME")
+QDRANT_HOST = get_secret("QDRANT_HOST", "qdrant")
+QDRANT_BASE_URL = get_secret("QDRANT_BASE_URL", "http://localhost")
+QDRANT_PORT = os.getenv("QDRANT_PORT", "6333")
+QDRANT_URL = f"http://{QDRANT_HOST}:{QDRANT_PORT}"
 
-QDRANT_BASE_URL = get_secret("QDRANT_BASE_URL")
-QDRANT_PORT = os.getenv("QDRANT_PORT")
-QDRANT_URL = f"{QDRANT_BASE_URL}:{QDRANT_PORT}"
+COLLECTION_NAME = get_secret("QDRANT_COLLECTION_NAME", "default_collection")
 
-COLLECTION_NAME = get_secret("QDRANT_COLLECTION_NAME")
+PATH_CONFIG_RAG = get_secret("PATH_CONFIG_RAG", "/app/config/rag_config.yml")
 
+REDIS_HOST = get_secret("REDIS_HOST", "localhost")
+REDIS_PORT = get_secret("REDIS_PORT", "6379")
+REDIS_CACHE_TTL_DAYS = min(int(get_secret("REDIS_CACHE_TTL_DAYS", "5")), 10)
+
+NLTK_DATA_DIR = get_secret("NLTK_DATA_DIR", "/root/nltk_data")
+
+OVERRIDE_INDEXING = get_secret("OVERRID_INDEXING", "false")
+if OVERRIDE_INDEXING == "true":
+    OVERRIDE_INDEXING = True
+elif OVERRIDE_INDEXING == "false":
+    OVERRIDE_INDEXING = False
+else:
+    OVERRIDE_INDEXING = False
 # Enhanced embedding configuration
 SENTENCE_TRANSFORMER = 'all-mpnet-base-v2'
 EMBEDDING_SIZE = 768
@@ -48,3 +59,9 @@ LLM_TEMP_GENERATION = 0.2
 
 LLM_MAX_TOKEN_REFINEMENT = 500
 LLM_TEMP_REFINEMENT = 0.2
+
+# TODO : Set up configuration for front server
+API_ALLOWED_ORIGINS = [
+    "http://localhost:5173",  # Vite dev server
+    "http://localhost:3000",  # React dev server (if using CRA)
+]
