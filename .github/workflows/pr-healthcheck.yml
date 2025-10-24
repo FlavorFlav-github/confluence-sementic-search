@@ -26,6 +26,13 @@ jobs:
         with:
           driver: docker-container
 
+      - name: Ensure .env exists
+        run: |
+          if [ ! -f .env ]; then
+            echo "⚠️ .env not found, creating empty .env"
+            touch .env
+          fi
+    
       - name: Build Docker image (CI mode, with cache)
         run: |
           docker buildx build \
