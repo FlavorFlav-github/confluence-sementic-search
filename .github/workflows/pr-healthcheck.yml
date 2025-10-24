@@ -26,13 +26,6 @@ jobs:
         with:
           driver: docker-container
 
-      - name: Free disk space (prevent ENOSPC)
-        run: |
-          echo "🧹 Cleaning up disk to prevent space errors..."
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
-          docker system prune -af || true
-          df -h
-
       - name: Build Docker image (CI mode, with cache)
         run: |
           docker buildx build \
