@@ -48,6 +48,8 @@ RUN if [ "$CI_MODE" != "true" ]; then \
       echo "🧪 Skipping Ollama installation in CI mode"; \
     fi
 
+RUN touch .env
+
 # Copy the whole project
 COPY . .
 
