@@ -48,12 +48,6 @@ RUN if [ "$CI_MODE" != "true" ]; then \
       echo "🧪 Skipping Ollama installation in CI mode"; \
     fi
 
-# Make sure .env exists
-RUN if [ ! -f .env ]; then \
-      echo "⚠️ .env not found, creating empty .env"; \
-      touch .env; \
-    fi
-
 # Copy the whole project
 COPY . .
 
