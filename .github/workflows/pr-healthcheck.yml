@@ -32,7 +32,16 @@ jobs:
             echo "⚠️ .env not found, creating empty .env"
             touch .env
           fi
-    
+
+      - name: Restore buildx cache
+        uses: actions/cache@v3
+        with:
+          path: /tmp/.buildx-cache
+          key: ${{ runner.os }}-buildx-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-buildx-
+
+
       - name: Build Docker image (CI mode, with cache)
         run: |
           docker buildx build \
@@ -62,7 +71,7 @@ jobs:
           sed -i '/deploy:/,/capabilities:/d' docker-compose.yml
 
       - name: Start services
-        run: docker compose up
+        run: docker compose up rag-app rag-qdrant rag-cache
         env:
           RAG_API_PORT: 8000
           QDRANT_PORT: 6333
