@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.0] - 2025-10-24
+### Added
+- Full Docker support for deployment and local development, including Dockerfile, docker-compose.yml, and entrypoint script.
+- GitHub Actions workflow for automated Docker image builds and CI integration.
+- Redis caching helper for faster query responses and reduced recomputation.
+- Config loader and centralized YAML-based configuration management.
+- New Makefile commands for building, testing, and container operations.
+- Comprehensive README updates detailing setup, configuration, and Docker usage.
+### Changed / Improved
+- Refactored LLM bridge and adapter modules for cleaner API integration and easier extension of model backends.
+- Reorganized configuration and environment handling to improve maintainability and flexibility.
+- Improved RAG API logic for more efficient query processing and retrieval.
+- Enhanced text indexer modules for better Qdrant integration and processing of larger documents.
+### Fixed
+- Minor dependency and import cleanup across modules.
+- Removed redundant configuration entries and outdated code paths.
+
 ## [1.1.0] - 2025-10-07
 ### Added
 
