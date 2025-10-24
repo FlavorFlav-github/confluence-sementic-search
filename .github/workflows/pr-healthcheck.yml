@@ -1,0 +1,73 @@
+name: PR Docker Build & Health Validation
+
+on:
+  pull_request:
+    branches:
+      - main
+    types: [opened, synchronize, reopened]
+
+jobs:
+  validate:
+    name: Validate Docker Build and Health
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build Docker image (no push)
+        run: |
+          docker build -t rag-app-test .
+
+      - name: Disable GPU deploy for CI
+        run: |
+          sed -i '/capabilities: \[ gpu, compute, utility \]/d' docker-compose.yml
+          sed -i '/driver: nvidia/d' docker-compose.yml
+          sed -i '/deploy:/,/capabilities:/d' docker-compose.yml
+
+      - name: Start services
+        run: |
+          docker-compose up -d
+        env:
+          RAG_API_PORT: 8000
+          QDRANT_PORT: 6333
+          REDIS_PORT: 6379
+
+      - name: Wait for API health check
+        run: |
+          echo "⏳ Waiting for /health endpoint..."
+          for i in {1..30}; do
+            STATUS=$(curl -s http://localhost:8000/health | jq -r '.status' || true)
+            if [[ "$STATUS" == "healthy" || "$STATUS" == "degraded" ]]; then
+              echo "✅ Health check passed with status: $STATUS"
+              exit 0
+            fi
+            echo "Waiting... ($i/30)"
+            sleep 5
+          done
+          echo "❌ Health check failed after 150s"
+          docker-compose logs
+          exit 1
+
+      - name: Verify Redis connectivity
+        run: |
+          docker exec rag-cache redis-cli ping | grep -q PONG || (echo "❌ Redis not responding" && docker-compose logs && exit 1)
+
+      - name: Verify Qdrant readiness
+        run: |
+          curl -fs http://localhost:6333/readyz || (echo "❌ Qdrant not ready" && docker-compose logs && exit 1)
+
+      - name: Clean up
+        if: always()
+        run: docker-compose down -v
