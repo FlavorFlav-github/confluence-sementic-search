@@ -38,7 +38,7 @@ jobs:
 
       - name: Start services
         run: |
-          docker-compose up -d
+          docker compose up -d
         env:
           RAG_API_PORT: 8000
           QDRANT_PORT: 6333
@@ -57,17 +57,17 @@ jobs:
             sleep 5
           done
           echo "❌ Health check failed after 150s"
-          docker-compose logs
+          docker compose logs
           exit 1
 
       - name: Verify Redis connectivity
         run: |
-          docker exec rag-cache redis-cli ping | grep -q PONG || (echo "❌ Redis not responding" && docker-compose logs && exit 1)
+          docker exec rag-cache redis-cli ping | grep -q PONG || (echo "❌ Redis not responding" && docker compose logs && exit 1)
 
       - name: Verify Qdrant readiness
         run: |
-          curl -fs http://localhost:6333/readyz || (echo "❌ Qdrant not ready" && docker-compose logs && exit 1)
+          curl -fs http://localhost:6333/readyz || (echo "❌ Qdrant not ready" && docker compose logs && exit 1)
 
       - name: Clean up
         if: always()
-        run: docker-compose down -v
+        run: docker compose down -v
