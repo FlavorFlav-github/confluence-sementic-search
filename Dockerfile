@@ -30,12 +30,6 @@ WORKDIR /app
 
 # Copy requirements first for caching
 COPY requirements.txt .
-
-# Remove heavy dependencies for CI builds
-RUN if [ "$CI_MODE" = "true" ]; then \
-      echo "🧪 CI mode enabled: removing heavy dependencies..."; \
-      sed -i '/^sentence-transformers==/d' requirements.txt; \
-    fi
     
 RUN pip install --upgrade pip
 RUN pip install -r requirements.txt
