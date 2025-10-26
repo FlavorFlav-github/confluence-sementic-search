@@ -9,6 +9,8 @@ CONFIG ?= ./config/rag_config.yml
 # Default docker-compose file
 COMPOSE_FILE := docker-compose.yml
 
+COMPOSE_FILE_GPU := docker-compose.gpu.yml
+
 # ------------------------------------------------------------
 # Targets
 # ------------------------------------------------------------
@@ -31,6 +33,10 @@ build:
 # Start all services with custom config
 up:
 	RAG_CONFIG_PATH=$(CONFIG) docker compose -f $(COMPOSE_FILE) up
+	
+# Start all services with custom config
+up-gpu:
+	RAG_CONFIG_PATH=$(CONFIG) docker compose -f $(COMPOSE_FILE) -f $(COMPOSE_FILE_GPU) up
 
 # Stop all services
 down:
@@ -42,8 +48,8 @@ logs:
 
 # Run only the indexer
 indexer:
-	RAG_CONFIG_PATH=$(CONFIG) docker compose -f $(COMPOSE_FILE) up -d rag-indexer
+	RAG_CONFIG_PATH=$(CONFIG) docker compose -f $(COMPOSE_FILE) up rag-indexer rag-qdrant rag-cache
 
 # Run only the main app
 app:
-	RAG_CONFIG_PATH=$(CONFIG) docker compose -f $(COMPOSE_FILE) up -d rag-app
+	RAG_CONFIG_PATH=$(CONFIG) docker compose -f $(COMPOSE_FILE) up rag-app rag-qdrant rag-cache

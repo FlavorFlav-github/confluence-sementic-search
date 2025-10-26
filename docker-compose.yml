@@ -5,13 +5,6 @@ services:
     build: .
     image: flavorflav/rag-app:latest
     container_name: rag-app
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [ gpu, compute, utility ]
     volumes:
       - ./config/rag_config.yml:/app/config/rag_config.yml:ro
       - ollama_models:/root/.ollama
@@ -42,13 +35,6 @@ services:
     image: flavorflav/rag-app:latest
     container_name: rag-indexer
     entrypoint: [""]
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [ gpu, compute, utility ]
     depends_on:
       rag-qdrant:
         condition: service_started
