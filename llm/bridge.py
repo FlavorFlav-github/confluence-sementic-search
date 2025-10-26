@@ -6,6 +6,7 @@ from llm.base_adapter import LLMAdapter
 from llm.config import LLMConfig  # Assuming this contains RECOMMENDED_MODELS
 from llm.gemini_adapter import GeminiModelAdapter
 from llm.ollama_adapter import OllamaModelAdapter
+from llm.transformers_adapter import TransformerModelAdapter
 from config.settings import (LLM_MAX_TOKEN_GENERATION, LLM_TEMP_GENERATION,
                              LLM_MAX_TOKEN_REFINEMENT, LLM_TEMP_REFINEMENT,
                              ENRICH_WITH_NEIGHBORS, COLLECTION_NAME)
@@ -30,7 +31,8 @@ class LocalLLMBridge:
     # A class-level dictionary to store available adapters.
     AVAILABLE_ADAPTERS = {
         "ollama": OllamaModelAdapter,
-        "gemini": GeminiModelAdapter
+        "gemini": GeminiModelAdapter,
+        "transformers": TransformerModelAdapter
     }
 
     def __init__(self, search_system: Any, generation_model_key: str, refinement_model_key: str,

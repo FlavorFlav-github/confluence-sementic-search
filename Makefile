@@ -49,7 +49,14 @@ logs:
 # Run only the indexer
 indexer:
 	RAG_CONFIG_PATH=$(CONFIG) docker compose -f $(COMPOSE_FILE) up rag-indexer rag-qdrant rag-cache
+	
+# Run only the indexer
+indexer-gpu:
+	RAG_CONFIG_PATH=$(CONFIG) docker compose -f $(COMPOSE_FILE) -f $(COMPOSE_FILE_GPU) up rag-indexer rag-qdrant rag-cache
 
 # Run only the main app
 app:
 	RAG_CONFIG_PATH=$(CONFIG) docker compose -f $(COMPOSE_FILE) up rag-app rag-qdrant rag-cache
+	
+app-gpu:
+	RAG_CONFIG_PATH=$(CONFIG) docker compose -f $(COMPOSE_FILE) -f $(COMPOSE_FILE_GPU) up rag-app rag-qdrant rag-cache

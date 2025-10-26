@@ -43,6 +43,14 @@ class LLMConfig:
             "ram_needed": "3GB",
             "best_for": "Technical docs, coding, structured responses"
         },
+        "pleias-rag-350m": {
+            "model_backend": "transformers",
+            "name": "PleIAs/Pleias-RAG-350M",
+            "size": "",
+            "description": "",
+            "ram_needed": "",
+            "best_for": ""
+        },
         "gemma2": {
             "model_backend": "ollama",
             "name": "gemma2:2b-instruct-q4_K_M",

@@ -48,8 +48,8 @@ RERANK_TOP_K = 5
 SOURCE_THRESHOLD = 0.4
 HYBRID_ALPHA = 0.7  # Weight for semantic vs keyword search (0.7 = 70% semantic, 30% keyword)
 
-LLM_BACKEND_TYPE_GENERATION="ollama"
-LLM_MODEL_GENERATION="phi3.5_q8_0"
+LLM_BACKEND_TYPE_GENERATION="gemini"
+LLM_MODEL_GENERATION="flash"
 
 LLM_BACKEND_TYPE_REFINEMENT="gemini"
 LLM_MODEL_REFINE="flash"
