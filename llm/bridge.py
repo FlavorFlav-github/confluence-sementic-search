@@ -234,9 +234,8 @@ class LocalLLMBridge:
         # Step 4: Generate the Final Answer using the *Generator* LLM
         try:
             print(f"🤖 Generating answer with local LLM ({self.generator.model_name})...")
-
             # --- Call the Generator's generation method ---
-            answer = self.generator.ask(final_prompt, MAX_TOKEN_REFINEMENT, TEMP_GENERATION)
+            answer = self.generator.ask(final_prompt, MAX_TOKEN_GENERATION, TEMP_GENERATION)
 
         except Exception as e:
             answer = f"Error generating answer: {str(e)}"

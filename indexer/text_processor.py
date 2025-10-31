@@ -14,9 +14,12 @@ from nltk.corpus import stopwords, wordnet
 
 # --- NLTK Data Check and Download ---
 
-NLTK_DATA_DIR = os.getenv("NLTK_DATA_DIR", "/root/nltk_data")
-os.makedirs(NLTK_DATA_DIR, exist_ok=True)
-nltk.data.path.append(NLTK_DATA_DIR)
+try:
+    NLTK_DATA_DIR = os.getenv("NLTK_DATA_DIR", "/root/nltk_data")
+    os.makedirs(NLTK_DATA_DIR, exist_ok=True)
+    nltk.data.path.append(NLTK_DATA_DIR)
+except PermissionError as e:
+    print("Running outside container does not have permission to access NLTK data.")
 
 # This block ensures all necessary NLTK data files (for tokenization, stop words, and lemmatization)
 # are present before the class is used.
@@ -216,9 +219,21 @@ class EnhancedTextProcessor:
         # Initialize BeautifulSoup parser
         soup = BeautifulSoup(html, "html.parser")
 
-        # Remove elements that do not contain relevant content (e.g., scripts, styles)
-        for script in soup(["script", "style"]):
-            script.decompose()
+        # Remove irrelevant tags
+        for tag in soup(["script", "style"]):
+            tag.decompose()
+
+        # Remove structured macros (like attachments or Confluence macros)
+        for macro in soup.find_all("ac:structured-macro"):
+            macro.decompose()
+
+        # Replace <br> and block tags with logical spacing
+        for br in soup.find_all("br"):
+            br.replace_with("\n")
+
+        for tag in soup.find_all(["p", "div", "li", "ul", "ol"]):
+            tag.insert_before("\n")
+            tag.insert_after("\n")
 
         for table in soup.find_all("table"):
             json_table = self._html_table_to_json(table)
@@ -226,9 +241,19 @@ class EnhancedTextProcessor:
             # Replace the HTML table with Markdown table
             table.replace_with(f"\n{json_table}\n")
 
-        # Now the text has placeholders
-        text = soup.get_text()
-        text = re.sub(r"\n\s*\n+", "\n\n", text)
+        # Get text with basic separators
+        text = soup.get_text(separator=" ", strip=True)
+
+        # Clean multiple spaces, line breaks, and Confluence artifacts
+        text = re.sub(r"\s+", " ", text)  # collapse all whitespace
+        text = re.sub(r"\s*\n\s*", "\n", text)  # normalize newlines
+        text = re.sub(r"\n{2,}", "\n", text)  # remove multiple newlines
+        text = re.sub(r"(\d{3,})", "", text)  # remove numeric placeholders like "250"
+        text = text.strip()
+
+        # Ensure sentences remain separate for embeddings
+        # Add period if missing between list or header merges
+        text = re.sub(r"([a-z])([A-Z])", r"\1. \2", text)
 
         return text
 

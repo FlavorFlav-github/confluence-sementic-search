@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import List, Dict
+from typing import List, Dict, Optional
 import aiohttp
 
 @dataclass
@@ -15,6 +15,7 @@ class PageContent:
     link: str
     hierarchy: List[str]
     metadata: Dict = None
+    files: Optional[List[str]] = None
 
 class DataSourceAdapter(ABC):
     """
@@ -41,3 +42,7 @@ class DataSourceAdapter(ABC):
     def get_headers(self) -> Dict[str, str]:
         """Return authentication headers"""
         pass
+
+    @abstractmethod
+    def get_files_content(self, session: aiohttp.ClientSession, page_id: str) -> List[Dict]:
+        """Return all files for a given page ID"""

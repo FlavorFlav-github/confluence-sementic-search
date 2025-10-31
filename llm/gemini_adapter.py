@@ -103,8 +103,8 @@ class GeminiModelAdapter(LLMAdapter):
             # so we handle that case.
             if not response.text:
                 raise Exception("API returned an empty response. Possible content blocking or generation error.")
-
-            return response.text.strip()
+            print(response.usage_metadata)
+            return response.text
 
         except APIError as e:
             raise Exception(f"Gemini API Error: {e}")

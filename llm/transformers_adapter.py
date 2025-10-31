@@ -2,7 +2,7 @@
 
 from typing import Dict, Any, List
 import torch
-from transformers import AutoTokenizer, AutoModelForSeq2SeqLM, pipeline
+from transformers import AutoTokenizer, AutoModelForSeq2SeqLM, pipeline, AutoModelForCausalLM
 
 from config.logging_config import logger
 from llm.base_adapter import LLMAdapter
@@ -84,7 +84,7 @@ class TransformerModelAdapter(LLMAdapter):
     # ---------------------------------------------------------------------
     # ASK (RAG ORCHESTRATION)
     # ---------------------------------------------------------------------
-    def ask(self, prompt: str, max_token: int = 500, temp: float = 0.2) -> Dict:
+    def ask(self, prompt: str, max_token: int = 500, temp: float = 0.2) -> str:
         """
         Performs a RAG-based answer generation using the local transformer model.
 
@@ -128,6 +128,9 @@ class TransformerModelAdapter(LLMAdapter):
                 temperature=temp
             )
             response = outputs[0]["generated_text"].strip()
+            if isinstance(self.model, AutoModelForCausalLM):
+                if response.startswith(prompt):
+                    response = response[len(prompt):].strip()
             print(response)
             return response
 

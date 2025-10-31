@@ -33,6 +33,7 @@ class QuestionRequest(BaseModel):
     search_top_k: Optional[int] = DEFAULT_TOP_K
     search_min_score: Optional[float] = SOURCE_THRESHOLD
     llm_top_k: Optional[int] = RERANK_TOP_K
+    cache: Optional[bool] = True
 
 class SearchRequest(BaseModel):
     question: str
@@ -135,16 +136,21 @@ def ask_question(request: QuestionRequest):
     model_select = request.model if request.model is not None else LLM_MODEL_GENERATION
     if model_select not in LLMConfig.AVAILABLE_MODELS:
         raise HTTPException(status_code=404, detail="Model not available")
+
+    model_params = LLMConfig.AVAILABLE_MODELS[model_select]
+    model_backend = model_params.get("model_backend")
+
     """Ask a question against the indexed Confluence documentation"""
     rag_system = LocalLLMBridge(
         search_system=search_system,
         generation_model_key=model_select,
         refinement_model_key=LLM_MODEL_REFINE,
-        generation_model_backend_type=LLM_BACKEND_TYPE_GENERATION,
+        generation_model_backend_type=model_backend,
         refinement_model_backend_type=LLM_BACKEND_TYPE_REFINEMENT,
         redis_host=REDIS_HOST,
         redis_port=REDIS_PORT,
-        redis_cache_ttl_days=REDIS_CACHE_TTL_DAYS
+        redis_cache_ttl_days=REDIS_CACHE_TTL_DAYS,
+        enable_cache=request.cache,
     )
     rag_system.setup_model()
     if rag_system is None:
@@ -179,7 +185,7 @@ def get_available_models():
     return LLMConfig.AVAILABLE_MODELS
 
 @app.post("/v1/rag/search", tags=["RAG"])
-def semantic_search(request: QuestionRequest):
+def semantic_search(request: SearchRequest):
     query = [request.question]
     max_sources = request.max_sources
     max_result = request.max_result

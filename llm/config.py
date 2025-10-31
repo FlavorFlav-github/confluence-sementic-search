@@ -51,6 +51,14 @@ class LLMConfig:
             "ram_needed": "",
             "best_for": ""
         },
+        "mistral-7B-instruct": {
+            "model_backend": "transformers",
+            "name": "mistralai/Mistral-7B-Instruct-v0.3",
+            "size": "",
+            "description": "",
+            "ram_needed": "",
+            "best_for": ""
+        },
         "gemma2": {
             "model_backend": "ollama",
             "name": "gemma2:2b-instruct-q4_K_M",
