@@ -6,7 +6,7 @@ ARG LOCAL_LLM=false
 ENV LOCAL_LLM=${LOCAL_LLM}
 
 # Allow lightweight CI builds
-ARG CPU_ONLY=false
+ARG CPU_ONLY=true
 ENV CPU_ONLY=${CPU_ONLY}
 
 # Allow pre-installation of specific ollama models
@@ -45,7 +45,7 @@ RUN if [ "$CPU_ONLY" = "true" ]; then \
     fi
 
 # Install Ollama only for non-CI builds
-RUN if [ "$LOCAL_LLM" != "true" ]; then \
+RUN if [ "$LOCAL_LLM" = "true" ]; then \
       echo "🚀 Installing Ollama..."; \
       curl -fsSL https://ollama.com/install.sh | bash; \
     else \

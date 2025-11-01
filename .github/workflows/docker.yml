@@ -15,6 +15,14 @@ on:
           - both
           - gpu
           - cpu
+      local_llm:
+        description: 'Local LLM'
+        required: true
+        default: 'false'
+        type: choice
+        options:
+          - false
+          - true
       tag_suffix:
         description: 'Additional tag suffix (optional)'
         required: false

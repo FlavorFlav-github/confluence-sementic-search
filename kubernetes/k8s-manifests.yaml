@@ -241,7 +241,7 @@ spec:
     spec:
       containers:
       - name: rag-app
-        image: ghcr.io/flavorflav-github/rag-app:main
+        image: ghcr.io/flavorflav-github/rag-app:lastest
         ports:
         - containerPort: 8000
         command: ["python", "-m", "main_api"]
@@ -317,7 +317,7 @@ spec:
     spec:
       containers:
       - name: rag-indexer
-        image: ghcr.io/flavorflav-github/rag-app:main
+        image: ghcr.io/flavorflav-github/rag-app:lastest
         command: ["python", "-m", "main_indexor"]
         env:
         - name: OVERRRIDE_INDEXING

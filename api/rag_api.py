@@ -192,7 +192,7 @@ def semantic_search(request: SearchRequest):
 
     if max_result > 5:
         return HTTPException(status_code=400, detail="The maximum number of results cannot exceed 5")
-    if max_sources > 5:
+    if max_sources > 20:
         return HTTPException(status_code=400, detail="The maximum number of sources to sort cannot exceed 20")
 
     results = search_system.hybrid_search(query)
