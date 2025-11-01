@@ -5,6 +5,10 @@ FROM python:3.12-slim-bookworm
 ARG CI_MODE=false
 ENV CI_MODE=${CI_MODE}
 
+# Allow lightweight CI builds
+ARG CPU_ONLY=false
+ENV CPU_ONLY=${CPU_ONLY}
+
 # Allow pre-installation of specific ollama models
 ARG OLLAMA_MODELS=""
 ENV OLLAMA_MODELS=${OLLAMA_MODELS}
@@ -32,7 +36,13 @@ WORKDIR /app
 COPY requirements.txt .
     
 RUN pip install --upgrade pip
-RUN pip install -r requirements.txt
+RUN if [ "$CPU_ONLY" = "true" ]; then \
+      echo "📦 Installing CPU-only dependencies..."; \
+      pip install -r requirements.cpu.txt; \
+    else \
+      echo "🎮 Installing full dependencies (with GPU support)..."; \
+      pip install -r requirements.txt; \
+    fi
 
 # Install Ollama only for non-CI builds
 RUN if [ "$CI_MODE" != "true" ]; then \
