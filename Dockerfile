@@ -2,8 +2,8 @@
 FROM python:3.12-slim-bookworm
 
 # Allow lightweight CI builds
-ARG CI_MODE=false
-ENV CI_MODE=${CI_MODE}
+ARG LOCAL_LLM=false
+ENV LOCAL_LLM=${LOCAL_LLM}
 
 # Allow lightweight CI builds
 ARG CPU_ONLY=false
@@ -34,23 +34,22 @@ WORKDIR /app
 
 # Copy requirements first for caching
 COPY requirements.txt .
-COPY requirements.cpu.txt .
 
 RUN pip install --upgrade pip
 RUN if [ "$CPU_ONLY" = "true" ]; then \
       echo "📦 Installing CPU-only dependencies..."; \
-      pip install -r requirements.cpu.txt; \
+      pip install -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cpu; \
     else \
       echo "🎮 Installing full dependencies (with GPU support)..."; \
       pip install -r requirements.txt; \
     fi
 
 # Install Ollama only for non-CI builds
-RUN if [ "$CI_MODE" != "true" ]; then \
+RUN if [ "$LOCAL_LLM" != "true" ]; then \
       echo "🚀 Installing Ollama..."; \
       curl -fsSL https://ollama.com/install.sh | bash; \
     else \
-      echo "🧪 Skipping Ollama installation in CI mode"; \
+      echo "🧪 Skipping Ollama installation"; \
     fi
 
 # Copy the whole project
