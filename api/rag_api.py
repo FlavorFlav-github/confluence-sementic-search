@@ -134,6 +134,7 @@ def health_check():
 @app.post("/v1/rag/ask", response_model=AnswerResponse, tags=["RAG"])
 def ask_question(request: QuestionRequest):
     model_select = request.model if request.model is not None else LLM_MODEL_GENERATION
+
     if model_select not in LLMConfig.AVAILABLE_MODELS:
         raise HTTPException(status_code=404, detail="Model not available")
 
@@ -152,9 +153,10 @@ def ask_question(request: QuestionRequest):
         redis_cache_ttl_days=REDIS_CACHE_TTL_DAYS,
         enable_cache=request.cache,
     )
-    rag_system.setup_model()
-    if rag_system is None:
-        raise HTTPException(status_code=500, detail="RAG system not initialized")
+    setup_response = rag_system.setup_model()
+
+    if not setup_response:
+        raise HTTPException(status_code=500, detail="LLM could not be initialized")
 
     try:
         result = rag_system.ask(request.question,

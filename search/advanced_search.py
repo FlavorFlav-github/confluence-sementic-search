@@ -4,7 +4,7 @@ from typing import List, Optional, Dict
 
 from qdrant_client import QdrantClient
 # Import necessary Qdrant models for defining filters
-from qdrant_client.http.models import Filter, FieldCondition, MatchValue, Range
+from qdrant_client.http.models import Filter, FieldCondition, MatchValue, Range, MatchAny
 from sentence_transformers import SentenceTransformer
 
 from config.logging_config import logger
@@ -83,12 +83,12 @@ class AdvancedSearch:
             # Filter by a list of page IDs
             if 'page_ids' in filters:
                 conditions.append(
-                    FieldCondition(key="page_id", match=MatchValue(value=filters['page_ids']))
+                    FieldCondition(key="page_id", match=MatchAny(any=filters['page_ids']))
                 )
             # Filter by a specific space key
             if 'space_key' in filters:
                 conditions.append(
-                    FieldCondition(key="space_key", match=MatchValue(value=filters['space_key']))
+                    FieldCondition(key="space_key", match=MatchAny(any=filters['space_key']))
                 )
             # Filter by minimum text length (e.g., to exclude very short chunks)
             if 'min_text_length' in filters:
@@ -400,44 +400,6 @@ class AdvancedSearch:
         )
 
         return final_results[:final_top_k]
-
-    def search_by_page_title(self, title_query: str, top_k: int = 5) -> List[SearchResult]:
-        """
-        Searches for chunks within documents whose titles match a given query string.
-
-        This is a two-step process: 1) find matching page IDs, 2) perform a semantic search constrained to those IDs.
-
-        Args:
-            title_query (str): The substring to search for within page titles.
-            top_k (int): The number of final chunks to return.
-
-        Returns:
-            List[SearchResult]: A list of SearchResult objects from the matching pages.
-        """
-        # Step 1: Find Page IDs with Matching Titles
-        # Scroll through the entire collection (up to 1000 points) just to get titles and page_ids
-        # NOTE: A real-world application should use a dedicated index for title search.
-        all_results = self.qdrant.scroll(
-            collection_name=COLLECTION_NAME,
-            scroll_filter=None,
-            limit=1000,  # Limits the number of points scanned for efficiency
-            with_payload=["title", "page_id"]  # Only retrieve the title and page_id payloads
-        )[0]
-
-        matching_page_ids = set()
-        title_lower = title_query.lower()
-        for point in all_results:
-            # Simple substring matching (case-insensitive)
-            if title_lower in point.payload['title'].lower():
-                matching_page_ids.add(point.payload['page_id'])
-
-        if not matching_page_ids:
-            return []
-
-        # Step 2: Perform Semantic Search on the Matching Pages
-        # The query is an empty string ("") but the search is limited by the page_ids filter.
-        # This effectively returns the top vector points from only the specified pages.
-        return self.semantic_search(queries=[""], top_k=top_k, filters={'page_ids': list(matching_page_ids)})
 
     def explain_results(self, results: List[SearchResult], query: str) -> None:
         """
