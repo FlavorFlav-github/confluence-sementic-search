@@ -1,0 +1,357 @@
+---
+# Namespace
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: rag-system
+
+---
+# ConfigMap for environment variables
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rag-config
+  namespace: rag-system
+data:
+  QDRANT_HOST: "rag-qdrant"
+  QDRANT_PORT: "6333"
+  REDIS_HOST: "rag-cache"
+  REDIS_PORT: "6379"
+  RAG_CONFIG_PATH: "/app/config/rag_config.yml"
+  NVIDIA_VISIBLE_DEVICES: "all"
+  NVIDIA_DRIVER_CAPABILITIES: "compute,utility"
+
+---
+# ConfigMap for rag_config.yml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rag-app-config
+  namespace: rag-system
+data:
+  rag_config.yml: |
+    sources:
+    - name: "Confluence Docs Sage"
+      type: "confluence"
+      base_url: "https://confluence.sage.com"
+      root_ids: ["583415205", "401175554"]
+      api_token: "${CONFLUENCE_TOKEN}"
+      sync_interval: "12h"
+
+---
+# PersistentVolumeClaims
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: qdrant-storage
+  namespace: rag-system
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: redis-data
+  namespace: rag-system
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ollama-models
+  namespace: rag-system
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 20Gi
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: rag-data
+  namespace: rag-system
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 10Gi
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: nltk-data
+  namespace: rag-system
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 5Gi
+
+---
+# Qdrant Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rag-qdrant
+  namespace: rag-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: rag-qdrant
+  template:
+    metadata:
+      labels:
+        app: rag-qdrant
+    spec:
+      containers:
+      - name: qdrant
+        image: qdrant/qdrant:latest
+        ports:
+        - containerPort: 6333
+        volumeMounts:
+        - name: qdrant-storage
+          mountPath: /qdrant/storage
+        envFrom:
+        - secretRef:
+            name: rag-secrets
+      volumes:
+      - name: qdrant-storage
+        persistentVolumeClaim:
+          claimName: qdrant-storage
+
+---
+# Qdrant Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: rag-qdrant
+  namespace: rag-system
+spec:
+  selector:
+    app: rag-qdrant
+  ports:
+  - port: 6333
+    targetPort: 6333
+  type: ClusterIP
+
+---
+# Redis Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rag-cache
+  namespace: rag-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: rag-cache
+  template:
+    metadata:
+      labels:
+        app: rag-cache
+    spec:
+      containers:
+      - name: redis
+        image: redis:7-alpine
+        ports:
+        - containerPort: 6379
+        args:
+        - redis-server
+        - --appendonly
+        - "yes"
+        volumeMounts:
+        - name: redis-data
+          mountPath: /data
+        livenessProbe:
+          exec:
+            command:
+            - redis-cli
+            - ping
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 5
+        readinessProbe:
+          exec:
+            command:
+            - redis-cli
+            - ping
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 5
+        envFrom:
+        - secretRef:
+            name: rag-secrets
+      volumes:
+      - name: redis-data
+        persistentVolumeClaim:
+          claimName: redis-data
+
+---
+# Redis Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: rag-cache
+  namespace: rag-system
+spec:
+  selector:
+    app: rag-cache
+  ports:
+  - port: 6379
+    targetPort: 6379
+  type: ClusterIP
+
+---
+# RAG App Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rag-app
+  namespace: rag-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: rag-app
+  template:
+    metadata:
+      labels:
+        app: rag-app
+    spec:
+      containers:
+      - name: rag-app
+        image: ghcr.io/flavorflav-github/rag-app:main
+        ports:
+        - containerPort: 8000
+        command: ["python", "-m", "main_api"]
+        env:
+        - name: OLLAMA_MODELS
+          value: ""  # Set your models here
+        envFrom:
+        - configMapRef:
+            name: rag-config
+        - secretRef:
+            name: rag-secrets
+        volumeMounts:
+        - name: config
+          mountPath: /app/config/rag_config.yml
+          subPath: rag_config.yml
+          readOnly: true
+        - name: ollama-models
+          mountPath: /root/.ollama
+        - name: rag-data
+          mountPath: /app/data
+        - name: nltk-data
+          mountPath: /root/nltk_data
+        securityContext:
+          capabilities:
+            add:
+            - SYS_ADMIN
+      volumes:
+      - name: config
+        configMap:
+          name: rag-app-config
+      - name: ollama-models
+        persistentVolumeClaim:
+          claimName: ollama-models
+      - name: rag-data
+        persistentVolumeClaim:
+          claimName: rag-data
+      - name: nltk-data
+        persistentVolumeClaim:
+          claimName: nltk-data
+
+---
+# RAG App Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: rag-app
+  namespace: rag-system
+spec:
+  selector:
+    app: rag-app
+  ports:
+  - port: 8000
+    targetPort: 8000
+    nodePort: 30800  # Change as needed
+  type: NodePort  # or LoadBalancer for cloud environments
+
+---
+# RAG Indexer Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rag-indexer
+  namespace: rag-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: rag-indexer
+  template:
+    metadata:
+      labels:
+        app: rag-indexer
+    spec:
+      containers:
+      - name: rag-indexer
+        image: ghcr.io/flavorflav-github/rag-app:main
+        command: ["python", "-m", "main_indexor"]
+        env:
+        - name: OVERRRIDE_INDEXING
+          value: "false"  # Set from environment
+        envFrom:
+        - configMapRef:
+            name: rag-config
+        - secretRef:
+            name: rag-secrets
+        volumeMounts:
+        - name: config
+          mountPath: /app/config/rag_config.yml
+          subPath: rag_config.yml
+          readOnly: true
+        - name: ollama-models
+          mountPath: /root/.ollama
+        - name: rag-data
+          mountPath: /app/data
+        - name: nltk-data
+          mountPath: /root/nltk_data
+        securityContext:
+          capabilities:
+            add:
+            - SYS_ADMIN
+      volumes:
+      - name: config
+        configMap:
+          name: rag-app-config
+      - name: ollama-models
+        persistentVolumeClaim:
+          claimName: ollama-models
+      - name: rag-data
+        persistentVolumeClaim:
+          claimName: rag-data
+      - name: nltk-data
+        persistentVolumeClaim:
+          claimName: nltk-data
