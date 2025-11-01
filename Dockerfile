@@ -34,7 +34,8 @@ WORKDIR /app
 
 # Copy requirements first for caching
 COPY requirements.txt .
-    
+COPY requirements.cpu.txt .
+
 RUN pip install --upgrade pip
 RUN if [ "$CPU_ONLY" = "true" ]; then \
       echo "📦 Installing CPU-only dependencies..."; \
