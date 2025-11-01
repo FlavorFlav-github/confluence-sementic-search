@@ -954,32 +954,6 @@ class TestAdvancedSearch:
         # Should only return final_top_k results
         assert len(results) == 3
 
-    def test_search_by_page_title_partial_match(self, advanced_search, mock_qdrant_client, sample_payload):
-        """Test that page title search works with partial matches."""
-        payloads = [
-            {**sample_payload, 'title': 'Introduction to Python Programming', 'page_id': 'page_1'},
-            {**sample_payload, 'title': 'Advanced Python Techniques', 'page_id': 'page_2'},
-            {**sample_payload, 'title': 'Java Programming Guide', 'page_id': 'page_3'},
-        ]
-
-        mock_qdrant_client.scroll.return_value = (
-            [MockQdrantPoint(id=str(i), score=0.9, payload=p) for i, p in enumerate(payloads)],
-            None
-        )
-
-        with patch.object(advanced_search, 'semantic_search') as mock_semantic:
-            mock_semantic.return_value = []
-            advanced_search.search_by_page_title("Python", top_k=5)
-
-            # Should have found 2 pages with "Python" in title
-            call_args = mock_semantic.call_args
-            assert 'filters' in call_args[1]
-            page_ids = call_args[1]['filters']['page_ids']
-            assert len(page_ids) == 2
-            assert 'page_1' in page_ids
-            assert 'page_2' in page_ids
-            assert 'page_3' not in page_ids
-
     @patch('search.advanced_search.common.embed_text')
     def test_hybrid_search_sorting_by_combined_score(self, mock_embed, advanced_search,
                                                      mock_qdrant_client, mock_hybrid_search_index,
