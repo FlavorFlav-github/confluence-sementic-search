@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import Mock, MagicMock, patch, call
+from unittest.mock import Mock, patch
 from collections import namedtuple
 
 from search.advanced_search import AdvancedSearch
@@ -137,7 +137,7 @@ class TestAdvancedSearch:
 
         # Execute
         filters = {'page_ids': ['page_123', 'page_456']}
-        results = advanced_search.semantic_search(
+        _ = advanced_search.semantic_search(
             queries=["test"],
             filters=filters,
             final_top_k=3
@@ -159,7 +159,7 @@ class TestAdvancedSearch:
 
         # Execute
         filters = {'space_key': ['my_space']}
-        results = advanced_search.semantic_search(
+        _ = advanced_search.semantic_search(
             queries=["test"],
             filters=filters,
             final_top_k=3
@@ -181,7 +181,7 @@ class TestAdvancedSearch:
 
         # Execute
         filters = {'min_text_length': 100}
-        results = advanced_search.semantic_search(
+        _ = advanced_search.semantic_search(
             queries=["test"],
             filters=filters,
             final_top_k=3
@@ -524,7 +524,7 @@ class TestAdvancedSearch:
         mock_hybrid_search_index.is_fitted = True
         mock_hybrid_search_index.keyword_search.return_value = [('page_123_0', 0.8)]
 
-        results = advanced_search.hybrid_search(queries=["query1", "query2"], final_top_k=3)
+        _ = advanced_search.hybrid_search(queries=["query1", "query2"], final_top_k=3)
 
         assert mock_hybrid_search_index.keyword_search.call_count == 2
 
@@ -1024,7 +1024,7 @@ class TestAdvancedSearch:
         # Mock empty results for all adjacent chunks
         mock_qdrant_client.scroll.return_value = ([], None)
 
-        adjacent = advanced_search.fetch_adjacent_chunks(result, k=10)
+        _ = advanced_search.fetch_adjacent_chunks(result, k=10)
 
         # Should request 20 chunks (10 before + 10 after)
         assert mock_qdrant_client.scroll.call_count == 20

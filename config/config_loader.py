@@ -1,5 +1,4 @@
 import os, yaml, re
-from config.settings import PATH_CONFIG_RAG
 
 def load_rag_config():
     """

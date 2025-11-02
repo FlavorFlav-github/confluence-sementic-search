@@ -1,8 +1,8 @@
 # File: llm/transformer_adapter.py
 
-from typing import Dict, Any, List
+from typing import Any
 import torch
-from transformers import AutoTokenizer, AutoModelForSeq2SeqLM, pipeline, AutoModelForCausalLM
+from transformers import AutoTokenizer, pipeline, AutoModelForCausalLM
 
 from config.logging_config import logger
 from llm.base_adapter import LLMAdapter

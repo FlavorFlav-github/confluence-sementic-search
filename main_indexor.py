@@ -38,8 +38,8 @@ def main():
     # 1. Initialize and connect to Qdrant (starts container if needed)
     try:
         qdrant = get_qdrant_client(QDRANT_URL)
-    except Exception as e:
-        logger.error(f"Failed to initialize Qdrant. Exiting. Error: {e}")
+    except Exception as ex:
+        logger.error(f"Failed to initialize Qdrant. Exiting. Error: {ex}")
         return
 
     # 2. Initialize Hybrid Search Index (Keyword/TF-IDF)

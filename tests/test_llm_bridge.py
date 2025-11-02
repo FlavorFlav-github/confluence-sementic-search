@@ -1,6 +1,5 @@
 import pytest
-from unittest.mock import Mock, MagicMock, patch, call
-from typing import Any, Dict, List
+from unittest.mock import Mock, patch
 
 # Import the class to test
 from llm.bridge import LocalLLMBridge
@@ -162,7 +161,7 @@ class TestLocalLLMBridgeInitialization:
                 enable_cache=False
             )
 
-            result = bridge.ask(
+            _ = bridge.ask(
                 "What is Python?",
                 top_k=20,
                 final_top_k=5,
@@ -289,7 +288,7 @@ class TestLocalLLMBridgeInitialization:
                 enable_cache=False
             )
 
-            result = bridge.ask("What is Python?")
+            _ = bridge.ask("What is Python?")
 
             # merge_adjacent_chunks_qdrant should not be called
             mock_search_system.merge_adjacent_chunks_qdrant.assert_not_called()
@@ -550,7 +549,7 @@ class TestLocalLLMBridgeSetup:
 
             assert result is True
             assert bridge.is_ready is True
-            bridge.generator.setup.call_count == 2
+            assert bridge.generator.setup.call_count == 2
 
     @patch('llm.bridge.RAGCacheHelper')
     @patch('llm.bridge.LLMConfig')

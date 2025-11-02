@@ -1,6 +1,6 @@
 import os
 import requests
-from typing import Any, Dict
+from typing import Any
 
 from llm.base_adapter import LLMAdapter
 
@@ -85,14 +85,14 @@ class GeminiModelAdapter(LLMAdapter):
             # Optionally print token usage if available
             usage = data.get("usageMetadata", {})
             prompt_tokens = usage.get("promptTokenCount", None)
-            candidatesTokenCount = usage.get("candidatesTokenCount", None)
-            thoughtsTokenCount = usage.get("thoughtsTokenCount", None)
-            totalTokenCount = usage.get("totalTokenCount", None)
+            candidates_token_count = usage.get("candidatesTokenCount", None)
+            thoughts_token_count = usage.get("thoughtsTokenCount", None)
+            total_token_count = usage.get("totalTokenCount", None)
             if usage:
                 print(f"🔹 Prompt Tokens: {prompt_tokens}")
-                print(f"🔹 Candidate Tokens: {candidatesTokenCount}")
-                print(f"🔹 Thoughts Token: {thoughtsTokenCount}")
-                print(f"🔹 Total Token: {totalTokenCount}")
+                print(f"🔹 Candidate Tokens: {candidates_token_count}")
+                print(f"🔹 Thoughts Token: {thoughts_token_count}")
+                print(f"🔹 Total Token: {total_token_count}")
 
             return text
 

@@ -82,7 +82,7 @@ class ConfluenceAdapter(DataSourceAdapter):
         return hierarchy
 
     async def _make_request(self, session: aiohttp.ClientSession, url: str,
-                            params: Dict = None, max_retries: int = 5, file = False) -> Optional[Dict]:
+                            params: Dict = None, max_retries: int = 5) -> Optional[Dict]:
         """Make HTTP request with retry logic and throttling handling"""
         headers = self.get_headers()
 
@@ -237,16 +237,16 @@ class ConfluenceAdapter(DataSourceAdapter):
 
                                 # Flatten JSON structure into readable text
                                 def flatten_json(obj, prefix=""):
-                                    lines = []
+                                    lines_json = []
                                     if isinstance(obj, dict):
                                         for k, v in obj.items():
-                                            lines.extend(flatten_json(v, f"{prefix}{k}: "))
+                                            lines_json.extend(flatten_json(v, f"{prefix}{k}: "))
                                     elif isinstance(obj, list):
                                         for i, v in enumerate(obj):
-                                            lines.extend(flatten_json(v, f"{prefix}[{i}] "))
+                                            lines_json.extend(flatten_json(v, f"{prefix}[{i}] "))
                                     else:
-                                        lines.append(f"{prefix}{obj}")
-                                    return lines
+                                        lines_json.append(f"{prefix}{obj}")
+                                    return lines_json
 
                                 text = "\n".join(flatten_json(data))
                             except Exception as e:

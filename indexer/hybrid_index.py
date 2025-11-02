@@ -3,7 +3,6 @@ import os
 from typing import List, Tuple
 
 # Using a simplified cosine similarity function, likely for local development/testing
-from qdrant_client.local.distances import cosine_similarity 
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.preprocessing import normalize
 import numpy as np

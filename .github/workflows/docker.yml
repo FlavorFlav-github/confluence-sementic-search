@@ -21,8 +21,8 @@ on:
         default: 'false'
         type: choice
         options:
-          - false
-          - true
+          - 'false'
+          - 'true'
       tag_suffix:
         description: 'Additional tag suffix (optional)'
         required: false

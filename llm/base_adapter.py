@@ -1,5 +1,5 @@
 from abc import abstractmethod, ABC
-from typing import Any, Dict
+from typing import Any
 
 
 class LLMAdapter(ABC):
@@ -58,7 +58,7 @@ class LLMAdapter(ABC):
         pass
 
     @abstractmethod
-    def ask(self, question: str, max_token: int = 500, temp: float = 0.2) -> Dict:
+    def ask(self, question: str, max_token: int = 500, temp: float = 0.2) -> str:
         """
         Abstract method to ask a question, perform RAG, and get an answer.
 
@@ -71,7 +71,7 @@ class LLMAdapter(ABC):
             question (str): The user's question to be answered.
 
         Returns:
-            Dict: A dictionary containing the answer and potentially other metadata (e.g., retrieved sources).
+            str: The LLM response as string.
         """
         pass
 

@@ -79,13 +79,13 @@ class LocalLLMBridge:
 
 
         # --- Validate and Instantiate two distinct adapters ---
-        AdapterClassGeneration = self.AVAILABLE_ADAPTERS.get(generation_model_backend_type)
-        if not AdapterClassGeneration:
+        adapter_class_generation = self.AVAILABLE_ADAPTERS.get(generation_model_backend_type)
+        if not adapter_class_generation:
             raise ValueError(
                 f"Unknown backend type: {generation_model_backend_type}. Must be one of: {list(self.AVAILABLE_ADAPTERS.keys())}")
 
-        AdapterClassRefine = self.AVAILABLE_ADAPTERS.get(refinement_model_backend_type)
-        if not AdapterClassRefine:
+        adapter_class_refine = self.AVAILABLE_ADAPTERS.get(refinement_model_backend_type)
+        if not adapter_class_refine:
             raise ValueError(
                 f"Unknown backend type: {refinement_model_backend_type}. Must be one of: {list(self.AVAILABLE_ADAPTERS.keys())}")
 
@@ -101,8 +101,8 @@ class LocalLLMBridge:
 
         # 2. Instantiate Adapters
         # The adapter class is expected to implement LLMAdapter
-        self.generator: LLMAdapter = AdapterClassGeneration(search_system, gen_model_name)
-        self.refiner: LLMAdapter = AdapterClassRefine(search_system, ref_model_name)
+        self.generator: LLMAdapter = adapter_class_generation(search_system, gen_model_name)
+        self.refiner: LLMAdapter = adapter_class_refine(search_system, ref_model_name)
 
         # Use the generator's name for final output tracking
         self.model_name = gen_model_name

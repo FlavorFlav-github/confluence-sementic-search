@@ -4,12 +4,12 @@ from typing import List, Optional, Dict
 
 from qdrant_client import QdrantClient
 # Import necessary Qdrant models for defining filters
-from qdrant_client.http.models import Filter, FieldCondition, MatchValue, Range, MatchAny
+from qdrant_client.http.models import Filter, FieldCondition, Range, MatchAny
 from sentence_transformers import SentenceTransformer
 
 from config.logging_config import logger
 # Import application-wide configuration constants
-from config.settings import COLLECTION_NAME, RERANK_TOP_K, DEFAULT_TOP_K, HYBRID_ALPHA, SENTENCE_TRANSFORMER
+from config.settings import COLLECTION_NAME, HYBRID_ALPHA, SENTENCE_TRANSFORMER
 from indexer.hybrid_index import HybridSearchIndex
 from search.models import SearchResult
 from indexer import common
@@ -37,7 +37,8 @@ class AdvancedSearch:
         # Load the SentenceTransformer model used for converting queries into vectors (embeddings)
         self.embed_model = SentenceTransformer(SENTENCE_TRANSFORMER)
 
-    def preprocess_query(self, query: str) -> str:
+    @staticmethod
+    def preprocess_query(query: str) -> str:
         """
         Cleans and optimizes the raw user query for better search results.
 
@@ -401,7 +402,8 @@ class AdvancedSearch:
 
         return final_results[:final_top_k]
 
-    def explain_results(self, results: List[SearchResult], query: str) -> None:
+    @staticmethod
+    def explain_results(results: List[SearchResult], query: str) -> None:
         """
         Prints a formatted, detailed breakdown of the search results for debugging and analysis.
 

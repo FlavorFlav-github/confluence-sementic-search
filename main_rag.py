@@ -2,8 +2,6 @@
 Main application file for the Confluence search engine.
 Initializes all components and runs the indexing and search pipelines.
 """
-import os
-
 # Import custom modules
 from config.logging_config import logger
 from config.settings import (LLM_MODEL_REFINE, LLM_MODEL_GENERATION,

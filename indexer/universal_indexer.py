@@ -6,6 +6,7 @@ import aiohttp
 from dataclasses import dataclass
 
 from qdrant_client import QdrantClient
+from qdrant_client.http.exceptions import UnexpectedResponse
 from qdrant_client.models import PointStruct, VectorParams, Distance, Filter, FieldCondition
 from qdrant_client.http.models import MatchValue
 from sentence_transformers import SentenceTransformer
@@ -93,19 +94,31 @@ class UniversalIndexer:
         if reset:
             logger.info(f"Deleting collection: {self.COLLECTION_NAME}")
             try:
+                # Attempt to delete the collection
                 self.qdrant.delete_collection(collection_name=self.COLLECTION_NAME)
-            except Exception:
-                pass
+            except UnexpectedResponse as e:
+                logger.error(f"Unexpected response when deleting collection: {e}")
+                raise
+            except Exception as e:
+                logger.error(f"An unexpected error occurred during collection deletion: {e}")
+                raise
 
         try:
+            # 1. Check if the collection exists
             self.qdrant.get_collection(self.COLLECTION_NAME)
-            logger.info(f"Collection {self.COLLECTION_NAME} already exists")
-        except Exception:
-            logger.info(f"Creating Qdrant collection {self.COLLECTION_NAME}")
+            logger.info(f"Collection {self.COLLECTION_NAME} already exists.")
+
+        except UnexpectedResponse as e:
+            logger.info(f"Collection {self.COLLECTION_NAME} not found. Creating it now...")
             self.qdrant.create_collection(
                 collection_name=self.COLLECTION_NAME,
                 vectors_config=VectorParams(size=self.EMBEDDING_SIZE, distance=Distance.COSINE),
             )
+            logger.info(f"Collection {self.COLLECTION_NAME} created successfully.")
+
+        except Exception as e:
+            logger.error(f"An unexpected error occurred during collection check/creation: {e}")
+            raise
 
     def _check_for_update_cached(self, page_id: str, last_updated: str) -> bool:
         """Check if page needs update using cache"""

@@ -2,8 +2,6 @@
 API Layer for Confluence RAG system.
 Exposes endpoints for asking questions against the Confluence index.
 """
-import json
-
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -14,11 +12,10 @@ from indexer.qdrant_utils import get_qdrant_client
 # Import your modules
 from config.logging_config import logger
 from config.settings import LLM_MODEL_GENERATION, LLM_MODEL_REFINE, \
-    LLM_BACKEND_TYPE_GENERATION, LLM_BACKEND_TYPE_REFINEMENT, DEFAULT_TOP_K, RERANK_TOP_K, SOURCE_THRESHOLD, \
+    LLM_BACKEND_TYPE_REFINEMENT, DEFAULT_TOP_K, RERANK_TOP_K, SOURCE_THRESHOLD, \
     API_ALLOWED_ORIGINS, REDIS_HOST, REDIS_PORT, REDIS_CACHE_TTL_DAYS, QDRANT_URL
 from indexer.hybrid_index import HybridSearchIndex
 from llm.bridge import LocalLLMBridge
-from llm.config import LLMConfig
 from search.advanced_search import AdvancedSearch
 from indexer.qdrant_utils import get_qdrant_stats
 from llm.config import LLMConfig
@@ -108,10 +105,10 @@ def health_check():
 
     # Check Qdrant
     try:
-        collections = qdrant.get_collections()
+        _ = qdrant.get_collections()
         services_status["qdrant"] = "healthy"
-    except Exception as e:
-        services_status["qdrant"] = f"unhealthy: {str(e)}"
+    except Exception as ex:
+        services_status["qdrant"] = f"unhealthy: {str(ex)}"
         overall_status = "unhealthy"
 
     # Check Hybrid Search Index
@@ -121,8 +118,8 @@ def health_check():
         else:
             services_status["hybrid_search"] = "not_fitted"
             overall_status = "degraded"
-    except Exception as e:
-        services_status["hybrid_search"] = f"unhealthy: {str(e)}"
+    except Exception as ex:
+        services_status["hybrid_search"] = f"unhealthy: {str(ex)}"
         overall_status = "unhealthy"
 
     return HealthResponse(
@@ -142,7 +139,7 @@ def ask_question(request: QuestionRequest):
     model_backend = model_params.get("model_backend")
 
     """Ask a question against the indexed Confluence documentation"""
-    rag_system = LocalLLMBridge(
+    rag_system_llm = LocalLLMBridge(
         search_system=search_system,
         generation_model_key=model_select,
         refinement_model_key=LLM_MODEL_REFINE,
@@ -153,13 +150,13 @@ def ask_question(request: QuestionRequest):
         redis_cache_ttl_days=REDIS_CACHE_TTL_DAYS,
         enable_cache=request.cache,
     )
-    setup_response = rag_system.setup_model()
+    setup_response = rag_system_llm.setup_model()
 
     if not setup_response:
         raise HTTPException(status_code=500, detail="LLM could not be initialized")
 
     try:
-        result = rag_system.ask(request.question,
+        result = rag_system_llm.ask(request.question,
                                 top_k=request.search_top_k,
                                 final_top_k=request.llm_top_k,
                                 score_threshold=request.search_min_score)
@@ -178,8 +175,8 @@ def ask_question(request: QuestionRequest):
             sources=sources,
         )
 
-    except Exception as e:
-        logger.error(f"Error during RAG query: {e}")
+    except Exception as ex:
+        logger.error(f"Error during RAG query: {ex}")
         raise HTTPException(status_code=500, detail="Error processing question")
 
 @app.get("/v1/rag/models", tags=["RAG"])
