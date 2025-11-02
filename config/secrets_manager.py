@@ -1,6 +1,6 @@
 import os
 
-from logging_config import logger
+from config.logging_config import logger
 from dotenv import load_dotenv
 
 AVAILABLE_CLOUD_SECRET_MANAGER = []
