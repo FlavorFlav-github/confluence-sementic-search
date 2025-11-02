@@ -101,6 +101,7 @@ class TransformerModelAdapter(LLMAdapter):
             }
         """
         if not self.is_ready:
+            logger.error(f"Transformer model '{self.model_name}' not initialized. Call setup() first.")
             raise RuntimeError(f"Transformer model '{self.model_name}' not initialized. Call setup() first.")
 
         return self._generate(prompt, max_token, temp)
@@ -131,7 +132,6 @@ class TransformerModelAdapter(LLMAdapter):
             if isinstance(self.model, AutoModelForCausalLM):
                 if response.startswith(prompt):
                     response = response[len(prompt):].strip()
-            print(response)
             return response
 
         except Exception as e:

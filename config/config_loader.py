@@ -1,4 +1,5 @@
 import os, yaml, re
+from logging_config import logger
 
 def load_rag_config():
     """
@@ -54,8 +55,8 @@ def load_rag_config():
         if missing:
             raise ValueError(f"❌ Missing required fields for {src['name']} ({src_type}): {', '.join(missing)}")
 
-    print(f"✅ Loaded {len(sources)} sources from config:")
+    logger.info(f"✅ Loaded {len(sources)} sources from config:")
     for src in sources:
-        print(f"   • {src['name']} ({src['type']})")
+        logger.info(f"   • {src['name']} ({src['type']})")
 
     return sources

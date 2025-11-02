@@ -100,20 +100,3 @@ class LLMConfig:
             "best_for": "Legacy compatibility, general tasks"
         }
     }
-
-    @classmethod
-    def print_recommendations(cls):
-        """Prints a simplified recommendation overview."""
-        print("🤖 RECOMMENDED LOCAL LLMs FOR RAG (Ollama):")
-        print("=" * 60)
-
-        print("\n🥇 BEST OVERALL (Recommended):")
-        print("   Model: Phi-3.5 Mini (3.8B parameters) - q4_K_M")
-        print("   Size: 2.2GB | RAM: 4GB | Speed: Very Fast")
-        print("   Why: Optimized for instruction following and RAG.")
-
-        print("\n🥈 MOST EFFICIENT:")
-        print("   Model: Gemma2 2B")
-        print("   Size: 1.6GB | RAM: 2GB | Speed: Fastest")
-        print("   Why: Smallest but still very capable for Q&A.")
-        print("-" * 60)

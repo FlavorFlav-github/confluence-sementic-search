@@ -1,5 +1,6 @@
 import os
 
+from logging_config import logger
 from dotenv import load_dotenv
 
 AVAILABLE_CLOUD_SECRET_MANAGER = []
@@ -9,20 +10,20 @@ try:
     import boto3
     AVAILABLE_CLOUD_SECRET_MANAGER.append("aws")
 except ModuleNotFoundError as e:
-    print("No module found for AWS secret store")
+    logger.info("No module found for AWS secret store")
 
 try:
     import secretmanager
     AVAILABLE_CLOUD_SECRET_MANAGER.append("gcp")
 except ModuleNotFoundError as e:
-    print("No module found for GCP secret store")
+    logger.info("No module found for GCP secret store")
 
 try:
     import SecretClient
     import DefaultAzureCredential
     AVAILABLE_CLOUD_SECRET_MANAGER.append("azure")
 except ModuleNotFoundError as e:
-    print("No module found for Azure secret store")
+    logger.info("No module found for Azure secret store")
 
 def get_secret(name: str, default: str | None = None) -> str | None:
     backend = os.getenv("SECRET_BACKEND", "env").lower()

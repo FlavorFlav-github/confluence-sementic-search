@@ -1,9 +1,10 @@
 import time
-from typing import Dict, Any, List, Union
+from typing import Union
 
 from qdrant_client.http.exceptions import ResponseHandlingException, UnexpectedResponse
 from qdrant_client.http.models import FieldCondition, MatchValue, Filter
 from qdrant_client import QdrantClient
+from typing import List, Dict, Any
 
 from config.logging_config import logger
 from collections import defaultdict
@@ -30,25 +31,27 @@ def get_qdrant_client(url: str, max_wait_seconds: int = 30) -> QdrantClient:
         elapsed = time.time() - start_time
 
         if elapsed >= max_wait_seconds:
+            logger.error(f"Failed to connect to Qdrant at {url} after {max_wait_seconds} seconds")
             raise Exception(
                 f"Failed to connect to Qdrant at {url} after {max_wait_seconds} seconds"
             )
 
         attempt += 1
         try:
-            print(f"Attempting to connect to Qdrant at {url} (attempt {attempt})...")
+            logger.info(f"Attempting to connect to Qdrant at {url} (attempt {attempt})...")
             client = QdrantClient(url=url, timeout=5)
 
             # Test the connection
             client.get_collections()
 
-            print(f"✓ Successfully connected to Qdrant after {elapsed:.2f} seconds")
+            logger.info(f"✓ Successfully connected to Qdrant after {elapsed:.2f} seconds")
             return client
 
         except (ResponseHandlingException, UnexpectedResponse, Exception) as e:
             remaining = max_wait_seconds - elapsed
 
             if remaining <= 0:
+                logger.error(f"Failed to connect to Qdrant at {url}: {str(e)}")
                 raise Exception(
                     f"Failed to connect to Qdrant: {str(e)}"
                 ) from e
@@ -57,8 +60,8 @@ def get_qdrant_client(url: str, max_wait_seconds: int = 30) -> QdrantClient:
             wait_time = min(2 ** (attempt - 1), 5)
             wait_time = min(wait_time, remaining)
 
-            print(f"⚠ Connection failed: {str(e)}")
-            print(f"  Retrying in {wait_time:.1f}s... ({remaining:.1f}s remaining)")
+            logger.warning(f"⚠ Connection failed: {str(e)}")
+            logger.info(f"  Retrying in {wait_time:.1f}s... ({remaining:.1f}s remaining)")
 
             time.sleep(wait_time)
 
@@ -169,11 +172,6 @@ def get_documents_by_metadata(
         if return_count_only:
             return {"total_documents": 0, "unique_pages": 0, "detail": {}}
         return []
-
-
-from qdrant_client import QdrantClient
-from typing import List, Dict, Any
-
 
 def get_qdrant_stats(client) -> List[Dict[str, Any]]:
     """

@@ -3,7 +3,7 @@ import requests
 from typing import Any
 
 from llm.base_adapter import LLMAdapter
-
+from config.logging_config import logger
 
 class GeminiModelAdapter(LLMAdapter):
     """
@@ -22,17 +22,17 @@ class GeminiModelAdapter(LLMAdapter):
         """
         Verifies the Gemini API key and connectivity to the REST endpoint.
         """
-        print(f"🚀 Setting up Gemini API (HTTP) with model: {self.model_name}")
+        logger.info(f"🚀 Setting up Gemini API (HTTP) with model: {self.model_name}")
 
         if not self.api_key:
-            print("❌ GEMINI_API_KEY environment variable not found.")
+            logger.error("❌ GEMINI_API_KEY environment variable not found.")
             self.is_ready = False
             return False
 
         # We don't have a specific endpoint to "verify" the model name via REST,
         # so we'll just mark it as ready.
         self.is_ready = True
-        print("✅ Gemini API key found. Ready to send requests.")
+        logger.info("✅ Gemini API key found. Ready to send requests.")
         return True
 
     def ask(self, prompt: str, max_token: int = 8096, temp: float = 0.2) -> str:
@@ -40,6 +40,7 @@ class GeminiModelAdapter(LLMAdapter):
         Public method for the Bridge to call for direct LLM generation.
         """
         if not self.is_ready:
+            logger.error(f"Gemini model '{self.model_name}' is not set up or ready.")
             raise RuntimeError(f"Gemini model '{self.model_name}' is not set up or ready.")
         return self._generate(prompt, max_token, temp)
 
@@ -78,8 +79,10 @@ class GeminiModelAdapter(LLMAdapter):
             text = candidates[0].get("content", {}).get("parts", [{}])[0].get("text", "")
             finish_reason = candidates[0].get("content", {}).get("finishReason", "STOP")
             if finish_reason != "STOP":
+                logger.error(f"API returned unexpected finish reason: {finish_reason}")
                 raise Exception(f"API returned unexpected finish reason: {finish_reason}")
             if not text:
+                logger.error("Empty response text from Gemini API.")
                 raise Exception("Empty response text from Gemini API.")
 
             # Optionally print token usage if available
@@ -89,14 +92,16 @@ class GeminiModelAdapter(LLMAdapter):
             thoughts_token_count = usage.get("thoughtsTokenCount", None)
             total_token_count = usage.get("totalTokenCount", None)
             if usage:
-                print(f"🔹 Prompt Tokens: {prompt_tokens}")
-                print(f"🔹 Candidate Tokens: {candidates_token_count}")
-                print(f"🔹 Thoughts Token: {thoughts_token_count}")
-                print(f"🔹 Total Token: {total_token_count}")
+                logger.info(f"🔹 Prompt Tokens: {prompt_tokens}")
+                logger.info(f"🔹 Candidate Tokens: {candidates_token_count}")
+                logger.info(f"🔹 Thoughts Token: {thoughts_token_count}")
+                logger.info(f"🔹 Total Token: {total_token_count}")
 
             return text
 
         except requests.exceptions.RequestException as e:
+            logger.error(f"HTTP Request failed: {e}")
             raise Exception(f"HTTP Request failed: {e}")
         except Exception as e:
+            logger.error(f"Gemini generation error: {e}")
             raise Exception(f"Gemini generation error: {e}")

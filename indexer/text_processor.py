@@ -11,6 +11,8 @@ from bs4 import BeautifulSoup
 from nltk import WordNetLemmatizer, sent_tokenize
 from nltk.corpus import stopwords, wordnet
 
+from config.logging_config import logger
+
 # --- NLTK Data Check and Download ---
 
 try:
@@ -18,7 +20,7 @@ try:
     os.makedirs(NLTK_DATA_DIR, exist_ok=True)
     nltk.data.path.append(NLTK_DATA_DIR)
 except PermissionError as e:
-    print("Running outside container does not have permission to access NLTK data.")
+    logger.warning("Running outside container does not have permission to access NLTK data.")
 
 # This block ensures all necessary NLTK data files (for tokenization, stop words, and lemmatization)
 # are present before the class is used.
@@ -28,7 +30,7 @@ try:
     nltk.data.find('corpora/stopwords')
     nltk.data.find('corpora/wordnet')
 except LookupError:
-    print("NLTK data not found. Downloading...")
+    logger.info("NLTK data not found. Downloading...")
     # Punkt is used for sentence tokenization
     nltk.download('punkt')
     nltk.download('punkt_tab')
@@ -334,11 +336,11 @@ class EnhancedTextProcessor:
             data = json.loads(json_text)
         except json.JSONDecodeError as ex:
             # Handles cases where 'json_text' isn't valid JSON (malformed syntax)
-            print(f"JSON decoding error: {ex}")
+            logger.warning(f"JSON decoding error: {ex}")
             return [json_text]  # Return raw text as fallback
         except TypeError as ex:
             # Handles cases where 'json_text' isn't a string, bytes, or bytearray (wrong input type)
-            print(f"Input type error for json.loads: {ex}")
+            logger.warning(f"Input type error for json.loads: {ex}")
             return [json_text]  # Return raw text as fallback
 
         # If not a list (e.g., dict), keep whole thing

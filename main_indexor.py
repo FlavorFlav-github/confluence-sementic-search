@@ -32,7 +32,7 @@ def main():
     """
     logger.info(f"Starting Confluence Indexing Pipeline with reset indexor as {RESET_INDEXOR}...")
 
-    print("🔧 Loading RAG configuration...")
+    logger.info("🔧 Loading RAG configuration...")
     sources = load_rag_config()
 
     # 1. Initialize and connect to Qdrant (starts container if needed)
@@ -67,7 +67,7 @@ def main():
         logger.warning("⚠️ Redis health check failed, disabling cache")
 
     for src in sources:
-        print(f"📚 Initializing source: {src['name']} ({src['type']})")
+        logger.info(f"📚 Initializing source: {src['name']} ({src['type']})")
         data_source = src['type']
         root_ids = src['root_ids']
         logger.info(f"Indexing {data_source} content from root ID: {root_ids}")
@@ -97,11 +97,11 @@ def main():
 
 
 if __name__ == "__main__":
-    print("🕒 Indexer service started, syncing every 6 hours")
+    logger.info("🕒 Indexer service started, syncing every 6 hours")
     while True:
         try:
             main()  # run your full sync routine
         except Exception as e:
-            print(f"❌ Error during indexing: {e}")
-        print(f"✅ Sleeping for {INTERVAL_SECONDS / 3600} hours...")
+            logger.error(f"❌ Error during indexing: {e}")
+        logger.info(f"✅ Sleeping for {INTERVAL_SECONDS / 3600} hours...")
         time.sleep(INTERVAL_SECONDS)

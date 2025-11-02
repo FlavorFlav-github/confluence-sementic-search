@@ -205,12 +205,12 @@ class ConfluenceAdapter(DataSourceAdapter):
                     file = self._make_request_sync(url, file=True)
                     if file:
                         filepath = os.path.join(tmpdir, file_name)
-                        print(f"⬇️  Downloading to temporary file: {filepath}")
+                        logger.info(f"⬇️  Downloading to temporary file: {filepath}")
 
                         with open(filepath, "wb") as f:
                             f.write(file.content)
 
-                        print(f"✅ File downloaded successfully: {filepath}")
+                        logger.info(f"✅ File downloaded successfully: {filepath}")
 
                         text = ""
                         ext = Path(file_name).suffix.lower()
@@ -250,7 +250,7 @@ class ConfluenceAdapter(DataSourceAdapter):
 
                                 text = "\n".join(flatten_json(data))
                             except Exception as e:
-                                print(f"⚠️ Could not parse JSON {file_name}: {e}")
+                                logger.warning(f"⚠️ Could not parse JSON {file_name}: {e}")
 
                         elif ext == ".csv":
                             try:
@@ -259,10 +259,10 @@ class ConfluenceAdapter(DataSourceAdapter):
                                     lines = [" ".join(row) for row in reader]
                                     text = "\n".join(lines)
                             except Exception as e:
-                                print(f"⚠️ Could not parse CSV {file_name}: {e}")
+                                logger.warning(f"⚠️ Could not parse CSV {file_name}: {e}")
 
                         else:
-                            print(f"⚠️ Unsupported file type for text extraction: {ext}")
+                            logger.warning(f"⚠️ Unsupported file type for text extraction: {ext}")
                             text = ""
 
                         # --- Append to results ---

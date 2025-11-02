@@ -75,9 +75,6 @@ try:
     hybrid_search_index.load_tfidf()
     search_system = AdvancedSearch(qdrant, hybrid_search_index)
 
-    # Print recommendations (nice to have)
-    LLMConfig.print_recommendations()
-
 except Exception as e:
     logger.error(f"Failed to initialize RAG API: {e}")
     rag_system = None

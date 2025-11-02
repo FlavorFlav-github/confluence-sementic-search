@@ -411,18 +411,18 @@ class AdvancedSearch:
             results (List[SearchResult]): The final list of search results.
             query (str): The original search query.
         """
-        print(f"\n{'=' * 60}")
-        print(f"SEARCH RESULTS FOR: '{query}'")
-        print(f"{'=' * 60}")
+        logger.info(f"\n{'=' * 60}")
+        logger.info(f"SEARCH RESULTS FOR: '{query}'")
+        logger.info(f"{'=' * 60}")
 
         for i, result in enumerate(results, 1):
             # Display all relevant scores and metadata
-            print(
+            logger.info(
                 f"\n[{i}] Score: {result.score:.4f} (Semantic: {result.semantic_score:.4f}, Keyword: {result.keyword_score:.4f})")
-            print(f"📄 Page: {result.title}")
-            print(f"🔗 Link: {result.link}")
-            print(f"📍 Hierarchy: {' > '.join(result.page_hierarchy) if result.page_hierarchy else 'N/A'}")
+            logger.info(f"📄 Page: {result.title}")
+            logger.info(f"🔗 Link: {result.link}")
+            logger.info(f"📍 Hierarchy: {' > '.join(result.page_hierarchy) if result.page_hierarchy else 'N/A'}")
             # Show a truncated snippet of the chunk text
-            print(f"📝 Snippet: {result.text[:200]}...")
-            print(f"🕒 Last Updated: {result.last_updated}")
-            print(f"📊 Chunk: {result.chunk_id} (Position: {result.position})")
+            logger.info(f"📝 Snippet: {result.text[:200]}...")
+            logger.info(f"🕒 Last Updated: {result.last_updated}")
+            logger.info(f"📊 Chunk: {result.chunk_id} (Position: {result.position})")

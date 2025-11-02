@@ -81,19 +81,23 @@ class LocalLLMBridge:
         # --- Validate and Instantiate two distinct adapters ---
         adapter_class_generation = self.AVAILABLE_ADAPTERS.get(generation_model_backend_type)
         if not adapter_class_generation:
+            logger.warning(f"Generator model key '{generation_model_key}' not found for backend '{generation_model_backend_type}'.")
             raise ValueError(
                 f"Unknown backend type: {generation_model_backend_type}. Must be one of: {list(self.AVAILABLE_ADAPTERS.keys())}")
 
         adapter_class_refine = self.AVAILABLE_ADAPTERS.get(refinement_model_backend_type)
         if not adapter_class_refine:
+            logger.warning(f"Refiner model key '{refinement_model_key}' not found for backend '{refinement_model_backend_type}'.")
             raise ValueError(
                 f"Unknown backend type: {refinement_model_backend_type}. Must be one of: {list(self.AVAILABLE_ADAPTERS.keys())}")
 
         # 1. Get model names from config
         if generation_model_key not in LLMConfig.AVAILABLE_MODELS:
+            logger.warning(f"Generator model key '{generation_model_key}' not found for backend '{generation_model_backend_type}'.")
             raise ValueError(f"Generator model key '{generation_model_key}' not found for backend '{generation_model_backend_type}'.")
 
         if refinement_model_key not in LLMConfig.AVAILABLE_MODELS:
+            logger.warning(f"Refiner model key '{refinement_model_key}' not found for backend '{refinement_model_backend_type}'.")
             raise ValueError(f"Refiner model key '{refinement_model_key}' not found for backend '{refinement_model_backend_type}'.")
 
         gen_model_name = LLMConfig.AVAILABLE_MODELS[generation_model_key]["name"]
@@ -112,15 +116,15 @@ class LocalLLMBridge:
 
         self.is_ready = False
 
-        print(f"⚙️ Bridge created. Generator: {gen_model_name}, Refiner: {ref_model_name}")
+        logger.info(f"⚙️ Bridge created. Generator: {gen_model_name}, Refiner: {ref_model_name}")
 
     def setup_model(self) -> bool:
         """
         Sets up both the Generator and Refiner models.
         """
-        print(f"Starting setup for Generator ({self.generator.model_name})...")
+        logger.info(f"Starting setup for Generator ({self.generator.model_name})...")
         gen_success = self.generator.setup()
-        print(f"Starting setup for Refiner ({self.refiner.model_name})...")
+        logger.info(f"Starting setup for Refiner ({self.refiner.model_name})...")
         ref_success = self.refiner.setup()
 
         # Only consider the bridge ready if *both* models are successfully set up
@@ -231,6 +235,7 @@ class LocalLLMBridge:
         the Generator for the final answer.
         """
         if not self.generator.is_ready or not self.refiner.is_ready:
+            logger.error("One or both LLM models are not set up or ready.")
             raise RuntimeError("One or both LLM models are not set up or ready.")
 
         # --- CACHE CHECK ---
@@ -265,13 +270,13 @@ class LocalLLMBridge:
 
         # Step 3: Generate the Final Answer using the *Generator* LLM
         try:
-            print(f"🤖 Generating answer with local LLM ({self.generator.model_name})...")
+            logger.info(f"🤖 Generating answer with local LLM ({self.generator.model_name})...")
             # --- Call the Generator's generation method ---
             answer = self.generator.ask(final_prompt, MAX_TOKEN_GENERATION, TEMP_GENERATION)
 
         except Exception as e:
             answer = f"Error generating answer: {str(e)}"
-            # logger.error(f"LLM generation error with generator model: {e}")
+            logger.error(f"LLM generation error with generator model: {e}")
 
         result = {
             'question': question,
