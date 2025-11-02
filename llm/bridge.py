@@ -6,6 +6,7 @@ from llm.base_adapter import LLMAdapter
 from llm.config import LLMConfig  # Assuming this contains RECOMMENDED_MODELS
 from llm.gemini_adapter import GeminiModelAdapter
 from llm.ollama_adapter import OllamaModelAdapter
+from llm.transformers_adapter import TransformerModelAdapter
 from config.settings import (LLM_MAX_TOKEN_GENERATION, LLM_TEMP_GENERATION,
                              LLM_MAX_TOKEN_REFINEMENT, LLM_TEMP_REFINEMENT,
                              ENRICH_WITH_NEIGHBORS, COLLECTION_NAME)
@@ -30,7 +31,8 @@ class LocalLLMBridge:
     # A class-level dictionary to store available adapters.
     AVAILABLE_ADAPTERS = {
         "ollama": OllamaModelAdapter,
-        "gemini": GeminiModelAdapter
+        "gemini": GeminiModelAdapter,
+        "transformers": TransformerModelAdapter
     }
 
     def __init__(self, search_system: Any, generation_model_key: str, refinement_model_key: str,
@@ -77,21 +79,25 @@ class LocalLLMBridge:
 
 
         # --- Validate and Instantiate two distinct adapters ---
-        AdapterClassGeneration = self.AVAILABLE_ADAPTERS.get(generation_model_backend_type)
-        if not AdapterClassGeneration:
+        adapter_class_generation = self.AVAILABLE_ADAPTERS.get(generation_model_backend_type)
+        if not adapter_class_generation:
+            logger.warning(f"Generator model key '{generation_model_key}' not found for backend '{generation_model_backend_type}'.")
             raise ValueError(
                 f"Unknown backend type: {generation_model_backend_type}. Must be one of: {list(self.AVAILABLE_ADAPTERS.keys())}")
 
-        AdapterClassRefine = self.AVAILABLE_ADAPTERS.get(refinement_model_backend_type)
-        if not AdapterClassRefine:
+        adapter_class_refine = self.AVAILABLE_ADAPTERS.get(refinement_model_backend_type)
+        if not adapter_class_refine:
+            logger.warning(f"Refiner model key '{refinement_model_key}' not found for backend '{refinement_model_backend_type}'.")
             raise ValueError(
                 f"Unknown backend type: {refinement_model_backend_type}. Must be one of: {list(self.AVAILABLE_ADAPTERS.keys())}")
 
         # 1. Get model names from config
         if generation_model_key not in LLMConfig.AVAILABLE_MODELS:
+            logger.warning(f"Generator model key '{generation_model_key}' not found for backend '{generation_model_backend_type}'.")
             raise ValueError(f"Generator model key '{generation_model_key}' not found for backend '{generation_model_backend_type}'.")
 
         if refinement_model_key not in LLMConfig.AVAILABLE_MODELS:
+            logger.warning(f"Refiner model key '{refinement_model_key}' not found for backend '{refinement_model_backend_type}'.")
             raise ValueError(f"Refiner model key '{refinement_model_key}' not found for backend '{refinement_model_backend_type}'.")
 
         gen_model_name = LLMConfig.AVAILABLE_MODELS[generation_model_key]["name"]
@@ -99,8 +105,8 @@ class LocalLLMBridge:
 
         # 2. Instantiate Adapters
         # The adapter class is expected to implement LLMAdapter
-        self.generator: LLMAdapter = AdapterClassGeneration(search_system, gen_model_name)
-        self.refiner: LLMAdapter = AdapterClassRefine(search_system, ref_model_name)
+        self.generator: LLMAdapter = adapter_class_generation(search_system, gen_model_name)
+        self.refiner: LLMAdapter = adapter_class_refine(search_system, ref_model_name)
 
         # Use the generator's name for final output tracking
         self.model_name = gen_model_name
@@ -110,15 +116,15 @@ class LocalLLMBridge:
 
         self.is_ready = False
 
-        print(f"⚙️ Bridge created. Generator: {gen_model_name}, Refiner: {ref_model_name}")
+        logger.info(f"⚙️ Bridge created. Generator: {gen_model_name}, Refiner: {ref_model_name}")
 
     def setup_model(self) -> bool:
         """
         Sets up both the Generator and Refiner models.
         """
-        print(f"Starting setup for Generator ({self.generator.model_name})...")
+        logger.info(f"Starting setup for Generator ({self.generator.model_name})...")
         gen_success = self.generator.setup()
-        print(f"Starting setup for Refiner ({self.refiner.model_name})...")
+        logger.info(f"Starting setup for Refiner ({self.refiner.model_name})...")
         ref_success = self.refiner.setup()
 
         # Only consider the bridge ready if *both* models are successfully set up
@@ -157,15 +163,7 @@ class LocalLLMBridge:
             return self.cache.get_cache_stats(self.collection_name)
         return {'cache_enabled': False}
 
-    def ask(self, question: str, top_k: int = 10, final_top_k: int = 3, score_threshold: float = 0, use_cache: bool = True, use_hybrid: bool = True) -> Dict:
-        """
-        Performs the full RAG process using the Refiner for query expansion and 
-        the Generator for the final answer.
-        """
-        if not self.generator.is_ready or not self.refiner.is_ready:
-            raise RuntimeError("One or both LLM models are not set up or ready.")
-
-        # --- CACHE CHECK ---
+    def _check_cached_answer(self, use_cache: bool, question: str, top_k: int, final_top_k: int, score_threshold: float):
         if self.cache_enabled and use_cache and self.cache:
             # Get collection's last update time
             collection_update_time = self.cache.get_collection_update_time(self.collection_name)
@@ -185,13 +183,28 @@ class LocalLLMBridge:
                 # Add cache indicator to response
                 cached_answer['from_cache'] = True
                 return cached_answer
+        return None
 
-        # Step 0: Refine query using the *Refiner* LLM
+    def _save_cached_answer(self, use_cache: bool, question: str, result: Dict[str, Any], top_k: int, final_top_k: int, score_threshold: float):
+        if self.cache_enabled and use_cache and self.cache:
+            try:
+                self.cache.cache_answer(
+                    question=question,
+                    answer=result,
+                    collection_name=self.collection_name,
+                    top_k=top_k,
+                    final_top_k=final_top_k,
+                    score_threshold=score_threshold
+                )
+            except Exception as e:
+                logger.warning(f"⚠️ Failed to cache answer: {e}")
+
+    def _refine_query(self, question: str, max_token: int, temp: float):
         try:
             refine_prompt = f"Rewrite '\"{question}\"' into 3 concise, alternative search queries. Return them as a bullet list, without explanation."
 
             # --- Call the Refiner's generation method ---
-            refined_output = self.refiner.ask(refine_prompt, MAX_TOKEN_REFINEMENT, TEMP_REFINEMENT)
+            refined_output = self.refiner.ask(refine_prompt, max_token, temp)
 
             refined_queries = [q.strip("-• ").strip() for q in refined_output.splitlines() if q.strip()]
             refined_queries.insert(0, question)
@@ -199,20 +212,46 @@ class LocalLLMBridge:
         except Exception as e:
             logger.error(f"Query refinement failed with refiner model: {e}")
             refined_queries = [question]
+        return refined_queries
 
-        # Step 1: Perform semantic search using the refined queries
+    def _get_search_results(self, question: str, use_hybrid: bool, refined_queries: List[str], top_k: int, final_top_k: int, score_threshold: float):
         if use_hybrid:
-            search_results = self.search.hybrid_search(refined_queries, top_k=top_k, final_top_k=final_top_k, score_threashold=score_threshold)
+            search_results = self.search.hybrid_search(refined_queries, top_k=top_k, final_top_k=final_top_k,
+                                                       score_threashold=score_threshold)
         else:
             search_results = self.search.semantic_search(refined_queries, top_k=top_k, final_top_k=final_top_k,
-                                                       score_threashold=score_threshold)
+                                                         score_threashold=score_threshold)
         if not search_results:
-            return {'question': question, 'answer': "I couldn't find any relevant information.", 'sources': [],
+            return False, {'question': question, 'answer': "I couldn't find any relevant information.", 'sources': [],
                     'model_used': self.model_name}
+
         if ENRICH_WITH_NEIGHBORS > -2:
             search_results = self.search.merge_adjacent_chunks_qdrant(search_results, k=ENRICH_WITH_NEIGHBORS)
+        return True, search_results
 
-        # Step 3: Format Context for the LLM
+    def ask(self, question: str, top_k: int = 10, final_top_k: int = 3, score_threshold: float = 0, use_cache: bool = True, use_hybrid: bool = True) -> Dict:
+        """
+        Performs the full RAG process using the Refiner for query expansion and 
+        the Generator for the final answer.
+        """
+        if not self.generator.is_ready or not self.refiner.is_ready:
+            logger.error("One or both LLM models are not set up or ready.")
+            raise RuntimeError("One or both LLM models are not set up or ready.")
+
+        # --- CACHE CHECK ---
+        cached_answer = self._check_cached_answer(use_cache, question, top_k, final_top_k, score_threshold)
+        if cached_answer:
+            return cached_answer
+
+        # Step 0: Refine query using the *Refiner* LLM
+        refined_queries = self._refine_query(question, MAX_TOKEN_REFINEMENT, TEMP_REFINEMENT)
+
+        # Step 1: Perform semantic search using the refined queries
+        result_found, search_results = self._get_search_results(question, use_hybrid, refined_queries, top_k, final_top_k, score_threshold)
+        if not result_found:
+            return search_results
+
+        # Step 2: Format Context for the LLM
         context_pieces = []
         for i, result in enumerate(search_results, 1):
             context_pieces.append(
@@ -229,16 +268,15 @@ class LocalLLMBridge:
         # Combine the system prompt, context, and question for the final LLM prompt
         final_prompt = f"{self.system_prompt}\n\nDOCUMENTATION:\n{context}\n\nQUESTION: {question}"
 
-        # Step 4: Generate the Final Answer using the *Generator* LLM
+        # Step 3: Generate the Final Answer using the *Generator* LLM
         try:
-            print(f"🤖 Generating answer with local LLM ({self.generator.model_name})...")
-
+            logger.info(f"🤖 Generating answer with local LLM ({self.generator.model_name})...")
             # --- Call the Generator's generation method ---
-            answer = self.generator.ask(final_prompt, MAX_TOKEN_REFINEMENT, TEMP_GENERATION)
+            answer = self.generator.ask(final_prompt, MAX_TOKEN_GENERATION, TEMP_GENERATION)
 
         except Exception as e:
             answer = f"Error generating answer: {str(e)}"
-            # logger.error(f"LLM generation error with generator model: {e}")
+            logger.error(f"LLM generation error with generator model: {e}")
 
         result = {
             'question': question,
@@ -255,19 +293,8 @@ class LocalLLMBridge:
             'from_cache': False
         }
 
-        #--- CACHE THE ANSWER ---
-        if self.cache_enabled and use_cache and self.cache:
-            try:
-                self.cache.cache_answer(
-                    question=question,
-                    answer=result,
-                    collection_name=self.collection_name,
-                    top_k=top_k,
-                    final_top_k=final_top_k,
-                    score_threshold=score_threshold
-                )
-            except Exception as e:
-                logger.warning(f"⚠️ Failed to cache answer: {e}")
+        # Step 4: Cache the answer
+        self._save_cached_answer(use_cache, question, result, top_k, final_top_k, score_threshold)
 
         # Step 5: Format and Return Results
         return result

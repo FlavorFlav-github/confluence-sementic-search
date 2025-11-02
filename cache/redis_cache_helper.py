@@ -7,9 +7,9 @@ import redis
 import json
 import hashlib
 from typing import Dict, Any, Optional
-from datetime import datetime, timedelta
+from datetime import datetime
 from config.logging_config import logger
-from config.settings import REDIS_HOST, REDIS_PORT, REDIS_CACHE_TTL_DAYS
+from config.settings import REDIS_HOST, REDIS_PORT
 
 
 class RAGCacheHelper:

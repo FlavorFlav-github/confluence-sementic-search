@@ -2,8 +2,6 @@
 Main application file for the Confluence search engine.
 Initializes all components and runs the indexing and search pipelines.
 """
-import os
-
 # Import custom modules
 from config.logging_config import logger
 from config.settings import (LLM_MODEL_REFINE, LLM_MODEL_GENERATION,
@@ -39,10 +37,7 @@ def main():
     # 3. Initialize Advanced Search System (combines vector and keyword search)
     search_system = AdvancedSearch(qdrant, hybrid_search_index)
 
-    # Print recommendations for the LLM setup (based on LLMConfig logic)
-    LLMConfig.print_recommendations()
-
-    print("🚀 CREATING LOCAL RAG SYSTEM...")
+    logger.info("🚀 CREATING LOCAL RAG SYSTEM...")
     
     # 4. Initialize the Local RAG Bridge
     # The bridge connects the search system (retrieval) with the LLM (generation)
@@ -71,20 +66,20 @@ def main():
     # Check if model setup was successful (assuming it sets an internal flag or handles failure)
     # The original check:
     if rag_system is None:
-        print("No local RAG system created")
+        logger.warning("No local RAG system created")
         return
 
-    print("\n🧪 TESTING LOCAL RAG SYSTEM:")
-    print("=" * 50)
+    logger.info("\n🧪 TESTING LOCAL RAG SYSTEM:")
+    logger.info("=" * 50)
 
     # 6. Interactive Q&A loop
-    print("\n🎯 Ready for interactive Q&A!")
+    logger.info("\n🎯 Ready for interactive Q&A!")
     while True:
         question = input("\n❓ Your question (or 'quit'): ").strip()
         
         # Exit condition
         if question.lower() in ['quit', 'exit', 'q']:
-            print("\n👋 Exiting RAG system. Goodbye!")
+            logger.info("\n👋 Exiting RAG system. Goodbye!")
             break
             
         if question:
@@ -93,22 +88,20 @@ def main():
                 result = rag_system.ask(question, top_k=DEFAULT_TOP_K, final_top_k=RERANK_TOP_K, score_threshold=SOURCE_THRESHOLD)
                 
                 # Print LLM Answer
-                print(f"\n🤖 {result.get('answer', 'Sorry, I could not generate an answer.')}")
+                logger.info(f"\n🤖 {result.get('answer', 'Sorry, I could not generate an answer.')}")
 
                 # Print Sources (retrieved documents)
-                print(f"\n📚 Sources:")
+                logger.info(f"\n📚 Sources:")
                 sources = result.get('sources', [])
                 if sources:
                     for source in sources:
                         # Display source title and search score
-                        print(f"  • ({source.get('source', 'N/A')}) {source.get('title', 'N/A')} (Score: {source.get('score', 0.0):.3f}) - {source.get('link', None)}")
+                        logger.info(f"  • ({source.get('source', 'N/A')}) {source.get('title', 'N/A')} (Score: {source.get('score', 0.0):.3f}) - {source.get('link', None)}")
                 else:
-                    print("  • No relevant sources found.")
+                    logger.info("  • No relevant sources found.")
                     
             except Exception as e:
-                logger.error(f"Error during RAG query: {e}")
-                print("\n❌ An error occurred while processing your question.")
-
+                logger.error("\n❌ An error occurred while processing your question.")
 
 if __name__ == "__main__":
     main()

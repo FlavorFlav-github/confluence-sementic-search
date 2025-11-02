@@ -2,9 +2,8 @@ import json
 import os
 import re
 import unicodedata
-from uuid import uuid4
 from collections import defaultdict
-from typing import List, Tuple, Dict, Any
+from typing import List
 
 import nltk
 from bs4 import BeautifulSoup
@@ -12,11 +11,16 @@ from bs4 import BeautifulSoup
 from nltk import WordNetLemmatizer, sent_tokenize
 from nltk.corpus import stopwords, wordnet
 
+from config.logging_config import logger
+
 # --- NLTK Data Check and Download ---
 
-NLTK_DATA_DIR = os.getenv("NLTK_DATA_DIR", "/root/nltk_data")
-os.makedirs(NLTK_DATA_DIR, exist_ok=True)
-nltk.data.path.append(NLTK_DATA_DIR)
+try:
+    NLTK_DATA_DIR = os.getenv("NLTK_DATA_DIR", "/root/nltk_data")
+    os.makedirs(NLTK_DATA_DIR, exist_ok=True)
+    nltk.data.path.append(NLTK_DATA_DIR)
+except PermissionError as e:
+    logger.warning("Running outside container does not have permission to access NLTK data.")
 
 # This block ensures all necessary NLTK data files (for tokenization, stop words, and lemmatization)
 # are present before the class is used.
@@ -26,7 +30,7 @@ try:
     nltk.data.find('corpora/stopwords')
     nltk.data.find('corpora/wordnet')
 except LookupError:
-    print("NLTK data not found. Downloading...")
+    logger.info("NLTK data not found. Downloading...")
     # Punkt is used for sentence tokenization
     nltk.download('punkt')
     nltk.download('punkt_tab')
@@ -108,12 +112,7 @@ class EnhancedTextProcessor:
             headers = [f"Column {i + 1}" for i in range(len(rows[0]))]
 
         # Build Markdown
-        md_lines = []
-
-        # Header row
-        md_lines.append("| " + " | ".join(headers) + " |")
-        # Separator
-        md_lines.append("| " + " | ".join(["---"] * len(headers)) + " |")
+        md_lines = ["| " + " | ".join(headers) + " |", "| " + " | ".join(["---"] * len(headers)) + " |"]
 
         # Data rows
         for r in rows:
@@ -122,7 +121,8 @@ class EnhancedTextProcessor:
 
         return "\n".join(md_lines)
 
-    def _html_table_to_json(self, table):
+    @staticmethod
+    def _html_table_to_json(table):
         """
         Convert an HTML <table> into JSON.
         Handles <th>, missing headers, colspan, and rowspan.
@@ -180,7 +180,8 @@ class EnhancedTextProcessor:
 
         return json.dumps(json_rows, indent=2)
 
-    def _clean_text(self, text):
+    @staticmethod
+    def _clean_text(text):
         # Remove HTML tags
         text = re.sub(r'<[^>]+>', ' ', text)
         # Normalize unicode characters (accents, etc.)
@@ -216,9 +217,21 @@ class EnhancedTextProcessor:
         # Initialize BeautifulSoup parser
         soup = BeautifulSoup(html, "html.parser")
 
-        # Remove elements that do not contain relevant content (e.g., scripts, styles)
-        for script in soup(["script", "style"]):
-            script.decompose()
+        # Remove irrelevant tags
+        for tag in soup(["script", "style"]):
+            tag.decompose()
+
+        # Remove structured macros (like attachments or Confluence macros)
+        for macro in soup.find_all("ac:structured-macro"):
+            macro.decompose()
+
+        # Replace <br> and block tags with logical spacing
+        for br in soup.find_all("br"):
+            br.replace_with("\n")
+
+        for tag in soup.find_all(["p", "div", "li", "ul", "ol"]):
+            tag.insert_before("\n")
+            tag.insert_after("\n")
 
         for table in soup.find_all("table"):
             json_table = self._html_table_to_json(table)
@@ -226,13 +239,24 @@ class EnhancedTextProcessor:
             # Replace the HTML table with Markdown table
             table.replace_with(f"\n{json_table}\n")
 
-        # Now the text has placeholders
-        text = soup.get_text()
-        text = re.sub(r"\n\s*\n+", "\n\n", text)
+        # Get text with basic separators
+        text = soup.get_text(separator=" ", strip=True)
+
+        # Clean multiple spaces, line breaks, and Confluence artifacts
+        text = re.sub(r"\s+", " ", text)  # collapse all whitespace
+        text = re.sub(r"\s*\n\s*", "\n", text)  # normalize newlines
+        text = re.sub(r"\n{2,}", "\n", text)  # remove multiple newlines
+        text = re.sub(r"(\d{3,})", "", text)  # remove numeric placeholders like "250"
+        text = text.strip()
+
+        # Ensure sentences remain separate for embeddings
+        # Add period if missing between list or header merges
+        text = re.sub(r"([a-z])([A-Z])", r"\1. \2", text)
 
         return text
 
-    def extract_keywords(self, text: str, top_k: int = 10) -> List[str]:
+    @staticmethod
+    def extract_keywords(text: str, top_k: int = 10) -> List[str]:
         """
         Extracts important keywords from the text using a simple NLP approach:
         stop word removal, lemmatization, and frequency counting.
@@ -266,10 +290,8 @@ class EnhancedTextProcessor:
         # Return the top K most frequent unique words
         return sorted(word_freq.keys(), key=word_freq.get, reverse=True)[:top_k]
 
-    import re
-    import json
-
-    def _split_json_blocks(self, text):
+    @staticmethod
+    def _split_json_blocks(text):
         """
         Splits text into segments of normal text and JSON blocks.
         Returns a list of dicts: {'type': 'text'|'json', 'content': str}
@@ -304,16 +326,22 @@ class EnhancedTextProcessor:
 
         return segments
 
-    def _chunk_json_block(self, json_text, max_chars=500):
+    @staticmethod
+    def _chunk_json_block(json_text, max_chars=500):
         """
         Splits a large JSON block into smaller chunks while ensuring valid JSON.
         If it's a list of objects, split by array elements.
         """
         try:
             data = json.loads(json_text)
-        except Exception:
-            # If JSON parsing fails, just return raw text
-            return [json_text]
+        except json.JSONDecodeError as ex:
+            # Handles cases where 'json_text' isn't valid JSON (malformed syntax)
+            logger.warning(f"JSON decoding error: {ex}")
+            return [json_text]  # Return raw text as fallback
+        except TypeError as ex:
+            # Handles cases where 'json_text' isn't a string, bytes, or bytearray (wrong input type)
+            logger.warning(f"Input type error for json.loads: {ex}")
+            return [json_text]  # Return raw text as fallback
 
         # If not a list (e.g., dict), keep whole thing
         if not isinstance(data, list):

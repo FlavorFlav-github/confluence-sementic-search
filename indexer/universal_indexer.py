@@ -6,6 +6,7 @@ import aiohttp
 from dataclasses import dataclass
 
 from qdrant_client import QdrantClient
+from qdrant_client.http.exceptions import UnexpectedResponse
 from qdrant_client.models import PointStruct, VectorParams, Distance, Filter, FieldCondition
 from qdrant_client.http.models import MatchValue
 from sentence_transformers import SentenceTransformer
@@ -93,19 +94,31 @@ class UniversalIndexer:
         if reset:
             logger.info(f"Deleting collection: {self.COLLECTION_NAME}")
             try:
+                # Attempt to delete the collection
                 self.qdrant.delete_collection(collection_name=self.COLLECTION_NAME)
-            except Exception:
-                pass
+            except UnexpectedResponse as e:
+                logger.error(f"Unexpected response when deleting collection: {e}")
+                raise
+            except Exception as e:
+                logger.error(f"An unexpected error occurred during collection deletion: {e}")
+                raise
 
         try:
+            # 1. Check if the collection exists
             self.qdrant.get_collection(self.COLLECTION_NAME)
-            logger.info(f"Collection {self.COLLECTION_NAME} already exists")
-        except Exception:
-            logger.info(f"Creating Qdrant collection {self.COLLECTION_NAME}")
+            logger.info(f"Collection {self.COLLECTION_NAME} already exists.")
+
+        except UnexpectedResponse as e:
+            logger.info(f"Collection {self.COLLECTION_NAME} not found. Creating it now...")
             self.qdrant.create_collection(
                 collection_name=self.COLLECTION_NAME,
                 vectors_config=VectorParams(size=self.EMBEDDING_SIZE, distance=Distance.COSINE),
             )
+            logger.info(f"Collection {self.COLLECTION_NAME} created successfully.")
+
+        except Exception as e:
+            logger.error(f"An unexpected error occurred during collection check/creation: {e}")
+            raise
 
     def _check_for_update_cached(self, page_id: str, last_updated: str) -> bool:
         """Check if page needs update using cache"""
@@ -119,8 +132,15 @@ class UniversalIndexer:
             # Use adapter to get normalized page content
             content = await self.data_adapter.fetch_page_content(session, page)
 
+
             if not content or not content.body:
                 return PageData([], [], [], content.page_id if content else "")
+
+            # We get the files attached in the page
+            files = await self.data_adapter.get_files_content(session, content.page_id)
+
+            for file in files:
+                file['title'] = f"{content.title}##file##{file['title']}"
 
             # Check if update needed
             needs_update = self._check_for_update_cached(content.page_id, content.last_updated)
@@ -133,52 +153,59 @@ class UniversalIndexer:
 
             # Extract and chunk text
             text = self.text_processor.extract_text_from_storage(content.body)
-            text_chunks = self.text_processor.smart_chunk_text(
-                text,
-                self.text_processor.chunk_size_limit,
-                self.text_processor.min_chunk_size,
-                self.text_processor.chunk_size_overlap
-            )
 
-            if not text_chunks:
-                return PageData([], [], [], content.page_id)
-
-            # Batch embed all chunks
-            chunk_texts = [x for x in text_chunks]
-            embeddings = common.embed_text(self.model_embed, chunk_texts)
+            multi_content = [{"text": text, "title":content.title, "id": content.page_id}] + files
 
             page_points = []
             tfidf_texts, tfidf_ids = [], []
 
-            for i, (chunk, emb) in enumerate(zip(text_chunks, embeddings)):
-                chunk_id = f"{content.page_id}_{i}"
-                point_id = str(uuid5(NAMESPACE_URL, chunk_id))
-                keywords = self.text_processor.extract_keywords(chunk)
-
-                page_points.append(
-                    PointStruct(
-                        id=point_id,
-                        vector=emb,
-                        payload={
-                            "title": content.title,
-                            "source": self.data_source_name,
-                            "page_id": content.page_id,
-                            "space_name": content.space_name,
-                            "chunk_id": chunk_id,
-                            "text": chunk,
-                            "keywords": keywords,
-                            "last_updated": content.last_updated,
-                            "link": content.link,
-                            "position": i,
-                            "hierarchy": content.hierarchy,
-                            "text_length": len(chunk),
-                            "space_key": content.space_key
-                        }
-                    )
+            for mono_content in multi_content:
+                text = mono_content.get("text")
+                title = mono_content.get("title")
+                page_id = mono_content.get("id")
+                text_chunks = self.text_processor.smart_chunk_text(
+                    text,
+                    self.text_processor.chunk_size_limit,
+                    self.text_processor.min_chunk_size,
+                    self.text_processor.chunk_size_overlap
                 )
 
-                tfidf_texts.append(chunk)
-                tfidf_ids.append(chunk_id)
+                if not text_chunks:
+                    return PageData([], [], [], content.page_id)
+
+                # Batch embed all chunks
+                chunk_texts = [x for x in text_chunks]
+                embeddings = common.embed_text(self.model_embed, chunk_texts)
+
+                for i, (chunk, emb) in enumerate(zip(text_chunks, embeddings)):
+                    chunk_id = f"{page_id}_{i}"
+                    point_id = str(uuid5(NAMESPACE_URL, chunk_id))
+                    keywords = self.text_processor.extract_keywords(chunk)
+
+                    page_points.append(
+                        PointStruct(
+                            id=point_id,
+                            vector=emb,
+                            payload={
+                                "title": title,
+                                "source": self.data_source_name,
+                                "page_id": page_id,
+                                "space_name": content.space_name,
+                                "chunk_id": chunk_id,
+                                "text": chunk,
+                                "keywords": keywords,
+                                "last_updated": content.last_updated,
+                                "link": content.link,
+                                "position": i,
+                                "hierarchy": content.hierarchy,
+                                "text_length": len(chunk),
+                                "space_key": content.space_key
+                            }
+                        )
+                    )
+
+                    tfidf_texts.append(chunk)
+                    tfidf_ids.append(chunk_id)
 
             return PageData(page_points, tfidf_texts, tfidf_ids, content.page_id)
 

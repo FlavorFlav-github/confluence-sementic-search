@@ -1,17 +1,8 @@
-version: "3.9"
-
 services:
   rag-app:
     build: .
     image: flavorflav/rag-app:latest
     container_name: rag-app
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [ gpu, compute, utility ]
     volumes:
       - ./config/rag_config.yml:/app/config/rag_config.yml:ro
       - ollama_models:/root/.ollama
@@ -30,8 +21,6 @@ services:
       RAG_CONFIG_PATH: /app/config/rag_config.yml
       REDIS_HOST: rag-cache
       REDIS_PORT: ${REDIS_PORT:-6379}
-      NVIDIA_VISIBLE_DEVICES: all
-      NVIDIA_DRIVER_CAPABILITIES: compute,utility
       OLLAMA_MODELS: ${OLLAMA_MODELS}
     env_file:
       - .env
@@ -42,13 +31,6 @@ services:
     image: flavorflav/rag-app:latest
     container_name: rag-indexer
     entrypoint: [""]
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [ gpu, compute, utility ]
     depends_on:
       rag-qdrant:
         condition: service_started
@@ -67,8 +49,6 @@ services:
       QDRANT_PORT: ${QDRANT_PORT:-6333}
       REDIS_HOST: rag-cache
       REDIS_PORT: ${REDIS_PORT:-6379}
-      NVIDIA_VISIBLE_DEVICES: all
-      NVIDIA_DRIVER_CAPABILITIES: compute,utility
       OVERRRIDE_INDEXING: ${OVERRRIDE_INDEXING:-false}
     command: ["python", "-m", "main_indexor"]
     restart: unless-stopped

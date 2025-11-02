@@ -144,3 +144,6 @@ class NotionAdapter(DataSourceAdapter):
                 await asyncio.sleep(2 ** attempt)
 
         return None
+
+    def get_files_content(self, session: aiohttp.ClientSession, page_id: str) -> List[Dict]:
+        pass

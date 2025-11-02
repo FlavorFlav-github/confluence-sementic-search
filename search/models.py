@@ -2,7 +2,7 @@
 Data models and schemas for the search application.
 """
 from dataclasses import dataclass
-from typing import List, Optional, Dict
+from typing import List, Optional
 
 @dataclass
 class SearchResult:

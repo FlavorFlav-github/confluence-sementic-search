@@ -1,6 +1,17 @@
+import csv
+import json
+import os
+import tempfile
+import time
+from pathlib import Path
 from typing import List, Dict, Optional
 import asyncio
 import aiohttp
+import requests
+from requests import Timeout, RequestException
+
+from docx import Document
+import PyPDF2
 
 from config.logging_config import logger
 from indexer.data_source.data_source_adapter import DataSourceAdapter, PageContent
@@ -119,3 +130,146 @@ class ConfluenceAdapter(DataSourceAdapter):
         logger.error(f"Max retries exceeded for {url}")
         return None
 
+    def _make_request_sync(self, url: str, params: Dict = None, max_retries: int = 5, file = False):
+        """
+        Make HTTP request with retry logic and throttling handling (synchronous version)
+        """
+        headers = self.get_headers() if self.get_headers else {}
+
+        for attempt in range(max_retries):
+            try:
+                logger.debug(f"Requesting {url}, attempt {attempt + 1}")
+                response = requests.get(url, params=params, headers=headers, timeout=30)
+
+                # Handle rate limiting
+                if response.status_code == 429:
+                    retry_after = response.headers.get('X-Retry-After') or response.headers.get('Retry-After')
+                    if retry_after:
+                        wait_time = int(retry_after)
+                    else:
+                        # Exponential backoff if no retry-after header
+                        wait_time = min(2 ** attempt, 60)
+
+                    logger.warning(
+                        f"Rate limited. Waiting {wait_time}s before retry (attempt {attempt + 1}/{max_retries})"
+                    )
+                    time.sleep(wait_time)
+                    continue
+
+                # Handle server errors
+                if response.status_code >= 500:
+                    wait_time = min(2 ** attempt, 30)
+                    logger.warning(
+                        f"Server error {response.status_code}. Retrying in {wait_time}s (attempt {attempt + 1}/{max_retries})"
+                    )
+                    time.sleep(wait_time)
+                    continue
+
+                response.raise_for_status()
+                if file:
+                    return response
+                else:
+                    return response.json()
+
+            except Timeout:
+                wait_time = min(2 ** attempt, 30)
+                logger.warning(f"Request timeout. Retrying in {wait_time}s (attempt {attempt + 1}/{max_retries})")
+                time.sleep(wait_time)
+                continue
+            except RequestException as e:
+                logger.error(f"Error making request to {url}: {e}")
+                if attempt == max_retries - 1:
+                    return None
+                time.sleep(2 ** attempt)
+        return None
+
+    async def get_files_content(self, session: aiohttp.ClientSession, page_id: str) -> List[Dict]:
+        url = f"{self.base_url}/rest/api/content/{page_id}/child/attachment"
+
+        children = await self._make_request(session, url)
+        raw_result = children.get("results", [])
+        result = []
+        with tempfile.TemporaryDirectory() as tmpdir:
+            for child in raw_result:
+                file_name = child["title"]
+                mediatype = child.get("metadata", {}).get("mediaType", "")
+                link_download = child.get("_links", {}).get("download", None)
+                if mediatype in [
+                    "application/pdf",
+                    "text/plain",
+                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",  # .docx
+                    "application/json",  # .json
+                    "text/csv"  # .csv
+                ] and link_download:
+                    url = f"{self.base_url}{link_download}"
+                    file = self._make_request_sync(url, file=True)
+                    if file:
+                        filepath = os.path.join(tmpdir, file_name)
+                        logger.info(f"⬇️  Downloading to temporary file: {filepath}")
+
+                        with open(filepath, "wb") as f:
+                            f.write(file.content)
+
+                        logger.info(f"✅ File downloaded successfully: {filepath}")
+
+                        text = ""
+                        ext = Path(file_name).suffix.lower()
+
+                        # --- Text Extraction per File Type ---
+                        if ext == ".txt":
+                            with open(filepath, "r", encoding="utf-8") as f:
+                                text = f.read()
+
+                        elif ext == ".pdf":
+                            with open(filepath, "rb") as f:
+                                reader = PyPDF2.PdfReader(f)
+                                for page in reader.pages:
+                                    text += (page.extract_text() or " ")
+
+                        elif ext == ".docx":
+                            doc = Document(filepath)
+                            text = "\n".join([p.text for p in doc.paragraphs])
+
+                        elif ext == ".json":
+                            try:
+                                with open(filepath, "r", encoding="utf-8") as f:
+                                    data = json.load(f)
+
+                                # Flatten JSON structure into readable text
+                                def flatten_json(obj, prefix=""):
+                                    lines_json = []
+                                    if isinstance(obj, dict):
+                                        for k, v in obj.items():
+                                            lines_json.extend(flatten_json(v, f"{prefix}{k}: "))
+                                    elif isinstance(obj, list):
+                                        for i, v in enumerate(obj):
+                                            lines_json.extend(flatten_json(v, f"{prefix}[{i}] "))
+                                    else:
+                                        lines_json.append(f"{prefix}{obj}")
+                                    return lines_json
+
+                                text = "\n".join(flatten_json(data))
+                            except Exception as e:
+                                logger.warning(f"⚠️ Could not parse JSON {file_name}: {e}")
+
+                        elif ext == ".csv":
+                            try:
+                                with open(filepath, "r", encoding="utf-8") as f:
+                                    reader = csv.reader(f)
+                                    lines = [" ".join(row) for row in reader]
+                                    text = "\n".join(lines)
+                            except Exception as e:
+                                logger.warning(f"⚠️ Could not parse CSV {file_name}: {e}")
+
+                        else:
+                            logger.warning(f"⚠️ Unsupported file type for text extraction: {ext}")
+                            text = ""
+
+                        # --- Append to results ---
+                        result.append({
+                            "title": file_name,
+                            "type": mediatype,
+                            "text": text.strip(),
+                            "id": child["id"],
+                        })
+        return result

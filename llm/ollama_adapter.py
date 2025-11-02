@@ -2,7 +2,7 @@
 
 import subprocess
 import time
-from typing import Dict, Any
+from typing import Any
 
 import requests
 
@@ -67,20 +67,20 @@ class OllamaModelAdapter(LLMAdapter):
         Returns:
             bool: True if the model is successfully confirmed ready, False otherwise.
         """
-        print(f"🚀 Setting up Ollama with model: {self.model_name}")
+        logger.info(f"🚀 Setting up Ollama with model: {self.model_name}")
 
         # 1. Check for 'ollama' CLI executable
         try:
             # Run a command to check if the `ollama` executable is in the PATH
             subprocess.run(["ollama", "--version"], capture_output=True, check=True)
-            print("✅ Ollama is installed")
+            logger.info("✅ Ollama is installed")
         except (subprocess.CalledProcessError, FileNotFoundError):
-            print("❌ Ollama not found. Please install from: https://ollama.ai")
+            logger.error("❌ Ollama not found. Please install from: https://ollama.ai")
             return False
 
         # 2. Check server status and attempt to start if not running
         if not self.check_ollama_status():
-            print("🔄 Attempting to start/wait for Ollama server...")
+            logger.info("🔄 Attempting to start/wait for Ollama server...")
             try:
                 # Start the server in the background using `ollama serve`.
                 # Note: `subprocess.Popen` is non-blocking and relies on the user's system to keep it running.
@@ -89,11 +89,11 @@ class OllamaModelAdapter(LLMAdapter):
                                  stderr=subprocess.DEVNULL)
                 time.sleep(3)  # Give the server a moment to spin up
             except Exception as e:
-                print(f"❌ Failed to start Ollama server: {e}")
+                logger.error(f"❌ Failed to start Ollama server: {e}")
 
         # 3. Install the model if still not present after server check/start
         if not self.check_ollama_status():
-            print(f"📥 Installing model: {self.model_name}. This may take a few minutes...")
+            logger.info(f"📥 Installing model: {self.model_name}. This may take a few minutes...")
             try:
                 # Use `ollama pull` to download and install the model
                 result = subprocess.run(
@@ -101,15 +101,15 @@ class OllamaModelAdapter(LLMAdapter):
                     capture_output=True, text=True, timeout=600  # 10 minutes timeout for pull
                 )
                 if result.returncode == 0:
-                    print("✅ Model installed successfully!")
+                    logger.info("✅ Model installed successfully!")
                 else:
                     # Log the last line of stderr as the error message
                     error_message = result.stderr.splitlines()[-1] if result.stderr else 'Unknown Error'
-                    print(
+                    logger.error(
                         f"❌ Failed to install model: {error_message}")
                     return False
             except (subprocess.TimeoutExpired, Exception) as e:
-                print(f"❌ Error installing model: {e}")
+                logger.error(f"❌ Error installing model: {e}")
                 return False
 
         # Final status check to confirm readiness
@@ -153,4 +153,5 @@ class OllamaModelAdapter(LLMAdapter):
             # Extract and strip the final generated response text
             return response.json()["response"].strip()
         else:
+            logger.error(f"Ollama API Error: HTTP {response.status_code} - {response.text}")
             raise Exception(f"Ollama API Error: HTTP {response.status_code} - {response.text}")

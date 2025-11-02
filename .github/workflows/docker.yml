@@ -4,7 +4,29 @@ on:
   push:
     branches: 
       - "main"
-  workflow_dispatch:       # allows manual trigger
+  workflow_dispatch:
+    inputs:
+      build_type:
+        description: 'Build type'
+        required: true
+        default: 'both'
+        type: choice
+        options:
+          - both
+          - gpu
+          - cpu
+      local_llm:
+        description: 'Local LLM'
+        required: true
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
+      tag_suffix:
+        description: 'Additional tag suffix (optional)'
+        required: false
+        default: ''
 
 jobs:
   docker:
@@ -23,11 +45,57 @@ jobs:
 
       - name: Set branch name lowercase
         id: vars
-        run: echo "BRANCH_NAME=$(echo ${GITHUB_REF_NAME} | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
-  
-      - name: Build and push API image
+        run: |
+          echo "BRANCH_NAME=$(echo ${GITHUB_REF_NAME} | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
+          
+          # Determine what to build
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "BUILD_TYPE=${{ inputs.build_type }}" >> $GITHUB_ENV
+            echo "TAG_SUFFIX=${{ inputs.tag_suffix }}" >> $GITHUB_ENV
+          else
+            # On push to main, build both
+            echo "BUILD_TYPE=both" >> $GITHUB_ENV
+            echo "TAG_SUFFIX=" >> $GITHUB_ENV
+          fi
+
+      - name: Build and push GPU image
+        if: env.BUILD_TYPE == 'gpu' || env.BUILD_TYPE == 'both'
         uses: docker/build-push-action@v3
         with:
           context: .
           push: true
-          tags: ghcr.io/flavorflav-github/rag-app:${{ env.BRANCH_NAME }}
+          build-args: |
+            CPU_ONLY=false
+          tags: |
+            ghcr.io/flavorflav-github/rag-app:${{ env.BRANCH_NAME }}${{ env.TAG_SUFFIX && format('-{0}', env.TAG_SUFFIX) || '' }}
+            ghcr.io/flavorflav-github/rag-app:latest${{ env.TAG_SUFFIX && format('-{0}', env.TAG_SUFFIX) || '' }}
+
+      - name: Build and push CPU image
+        if: env.BUILD_TYPE == 'cpu' || env.BUILD_TYPE == 'both'
+        uses: docker/build-push-action@v3
+        with:
+          context: .
+          push: true
+          build-args: |
+            CPU_ONLY=true
+          tags: |
+            ghcr.io/flavorflav-github/rag-app:${{ env.BRANCH_NAME }}-cpu${{ env.TAG_SUFFIX && format('-{0}', env.TAG_SUFFIX) || '' }}
+            ghcr.io/flavorflav-github/rag-app:cpu${{ env.TAG_SUFFIX && format('-{0}', env.TAG_SUFFIX) || '' }}
+
+      - name: Image built summary
+        run: |
+          echo "### 🐳 Docker Images Built" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [ "${{ env.BUILD_TYPE }}" = "gpu" ] || [ "${{ env.BUILD_TYPE }}" = "both" ]; then
+            echo "**GPU Image:**" >> $GITHUB_STEP_SUMMARY
+            echo "- \`ghcr.io/flavorflav-github/rag-app:${{ env.BRANCH_NAME }}${{ env.TAG_SUFFIX && format('-{0}', env.TAG_SUFFIX) || '' }}\`" >> $GITHUB_STEP_SUMMARY
+            echo "- \`ghcr.io/flavorflav-github/rag-app:latest${{ env.TAG_SUFFIX && format('-{0}', env.TAG_SUFFIX) || '' }}\`" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          if [ "${{ env.BUILD_TYPE }}" = "cpu" ] || [ "${{ env.BUILD_TYPE }}" = "both" ]; then
+            echo "**CPU Image:**" >> $GITHUB_STEP_SUMMARY
+            echo "- \`ghcr.io/flavorflav-github/rag-app:${{ env.BRANCH_NAME }}-cpu${{ env.TAG_SUFFIX && format('-{0}', env.TAG_SUFFIX) || '' }}\`" >> $GITHUB_STEP_SUMMARY
+            echo "- \`ghcr.io/flavorflav-github/rag-app:cpu${{ env.TAG_SUFFIX && format('-{0}', env.TAG_SUFFIX) || '' }}\`" >> $GITHUB_STEP_SUMMARY
+          fi
