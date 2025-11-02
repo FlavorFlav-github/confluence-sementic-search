@@ -159,15 +159,7 @@ class LocalLLMBridge:
             return self.cache.get_cache_stats(self.collection_name)
         return {'cache_enabled': False}
 
-    def ask(self, question: str, top_k: int = 10, final_top_k: int = 3, score_threshold: float = 0, use_cache: bool = True, use_hybrid: bool = True) -> Dict:
-        """
-        Performs the full RAG process using the Refiner for query expansion and 
-        the Generator for the final answer.
-        """
-        if not self.generator.is_ready or not self.refiner.is_ready:
-            raise RuntimeError("One or both LLM models are not set up or ready.")
-
-        # --- CACHE CHECK ---
+    def _check_cached_answer(self, use_cache: bool, question: str, top_k: int, final_top_k: int, score_threshold: float):
         if self.cache_enabled and use_cache and self.cache:
             # Get collection's last update time
             collection_update_time = self.cache.get_collection_update_time(self.collection_name)
@@ -187,13 +179,28 @@ class LocalLLMBridge:
                 # Add cache indicator to response
                 cached_answer['from_cache'] = True
                 return cached_answer
+        return None
 
-        # Step 0: Refine query using the *Refiner* LLM
+    def _save_cached_answer(self, use_cache: bool, question: str, result: Dict[str, Any], top_k: int, final_top_k: int, score_threshold: float):
+        if self.cache_enabled and use_cache and self.cache:
+            try:
+                self.cache.cache_answer(
+                    question=question,
+                    answer=result,
+                    collection_name=self.collection_name,
+                    top_k=top_k,
+                    final_top_k=final_top_k,
+                    score_threshold=score_threshold
+                )
+            except Exception as e:
+                logger.warning(f"⚠️ Failed to cache answer: {e}")
+
+    def _refine_query(self, question: str, max_token: int, temp: float):
         try:
             refine_prompt = f"Rewrite '\"{question}\"' into 3 concise, alternative search queries. Return them as a bullet list, without explanation."
 
             # --- Call the Refiner's generation method ---
-            refined_output = self.refiner.ask(refine_prompt, MAX_TOKEN_REFINEMENT, TEMP_REFINEMENT)
+            refined_output = self.refiner.ask(refine_prompt, max_token, temp)
 
             refined_queries = [q.strip("-• ").strip() for q in refined_output.splitlines() if q.strip()]
             refined_queries.insert(0, question)
@@ -201,20 +208,45 @@ class LocalLLMBridge:
         except Exception as e:
             logger.error(f"Query refinement failed with refiner model: {e}")
             refined_queries = [question]
+        return refined_queries
 
-        # Step 1: Perform semantic search using the refined queries
+    def _get_search_results(self, question: str, use_hybrid: bool, refined_queries: List[str], top_k: int, final_top_k: int, score_threshold: float):
         if use_hybrid:
-            search_results = self.search.hybrid_search(refined_queries, top_k=top_k, final_top_k=final_top_k, score_threashold=score_threshold)
+            search_results = self.search.hybrid_search(refined_queries, top_k=top_k, final_top_k=final_top_k,
+                                                       score_threashold=score_threshold)
         else:
             search_results = self.search.semantic_search(refined_queries, top_k=top_k, final_top_k=final_top_k,
-                                                       score_threashold=score_threshold)
+                                                         score_threashold=score_threshold)
         if not search_results:
-            return {'question': question, 'answer': "I couldn't find any relevant information.", 'sources': [],
+            return False, {'question': question, 'answer': "I couldn't find any relevant information.", 'sources': [],
                     'model_used': self.model_name}
+
         if ENRICH_WITH_NEIGHBORS > -2:
             search_results = self.search.merge_adjacent_chunks_qdrant(search_results, k=ENRICH_WITH_NEIGHBORS)
+        return True, search_results
 
-        # Step 3: Format Context for the LLM
+    def ask(self, question: str, top_k: int = 10, final_top_k: int = 3, score_threshold: float = 0, use_cache: bool = True, use_hybrid: bool = True) -> Dict:
+        """
+        Performs the full RAG process using the Refiner for query expansion and 
+        the Generator for the final answer.
+        """
+        if not self.generator.is_ready or not self.refiner.is_ready:
+            raise RuntimeError("One or both LLM models are not set up or ready.")
+
+        # --- CACHE CHECK ---
+        cached_answer = self._check_cached_answer(use_cache, question, top_k, final_top_k, score_threshold)
+        if cached_answer:
+            return cached_answer
+
+        # Step 0: Refine query using the *Refiner* LLM
+        refined_queries = self._refine_query(question, MAX_TOKEN_REFINEMENT, TEMP_REFINEMENT)
+
+        # Step 1: Perform semantic search using the refined queries
+        result_found, search_results = self._get_search_results(question, use_hybrid, refined_queries, top_k, final_top_k, score_threshold)
+        if not result_found:
+            return search_results
+
+        # Step 2: Format Context for the LLM
         context_pieces = []
         for i, result in enumerate(search_results, 1):
             context_pieces.append(
@@ -231,7 +263,7 @@ class LocalLLMBridge:
         # Combine the system prompt, context, and question for the final LLM prompt
         final_prompt = f"{self.system_prompt}\n\nDOCUMENTATION:\n{context}\n\nQUESTION: {question}"
 
-        # Step 4: Generate the Final Answer using the *Generator* LLM
+        # Step 3: Generate the Final Answer using the *Generator* LLM
         try:
             print(f"🤖 Generating answer with local LLM ({self.generator.model_name})...")
             # --- Call the Generator's generation method ---
@@ -256,19 +288,8 @@ class LocalLLMBridge:
             'from_cache': False
         }
 
-        #--- CACHE THE ANSWER ---
-        if self.cache_enabled and use_cache and self.cache:
-            try:
-                self.cache.cache_answer(
-                    question=question,
-                    answer=result,
-                    collection_name=self.collection_name,
-                    top_k=top_k,
-                    final_top_k=final_top_k,
-                    score_threshold=score_threshold
-                )
-            except Exception as e:
-                logger.warning(f"⚠️ Failed to cache answer: {e}")
+        # Step 4: Cache the answer
+        self._save_cached_answer(use_cache, question, result, top_k, final_top_k, score_threshold)
 
         # Step 5: Format and Return Results
         return result
