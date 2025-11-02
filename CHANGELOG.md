@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.3.0] - 2025-11-02
+
+### Added
+- **Universal Indexing System:** Introduced the `UniversalIndexer` and abstract `DataSourceAdapter` pattern for easy integration of new documentation sources (e.g., Notion, PDF).
+- **Asynchronous Confluence API:** Switched page fetching to `asyncio` and `aiohttp` for significantly faster, non-blocking I/O during indexing.
+- **Dedicated RAG API (FastAPI):** Added `api/rag_api.py` with health checks and a structured API layer, separating the indexing and query services.
+- **Comprehensive CI/CD:** Introduced GitHub Actions for **CodeQL security scanning**, **automated CPU/GPU Docker builds**, and **Python unit testing**.
+- **Centralized Config Loader:** Implemented `config_loader.py` for structured YAML configuration loading with robust validation and environment variable expansion.
+- New Makefile targets (`up-gpu`, `indexer-gpu`, `app-gpu`) for easier **GPU-enabled Docker Compose** launches.
+
+### Changed / Improved
+- **Modular Architecture:** Refactored monolithic files (`main.py`, `search/indexer.py`) into distinct, decoupled services (`main_indexer.py`, `main_rag.py`) for improved maintainability and clear service boundaries.
+- **Hybrid Search Logic:** Simplified the hybrid search score calculation logic in `HybridSearch.search` for cleaner integration of semantic and keyword scores.
+- Updated `LocalLLMBridge` and associated settings for better integration with configurable LLM backends.
+
+### Fixed
+- Removed redundant and deprecated monolithic files: `api/confluence.py`, `main.py`, and `search/indexer.py`.
+- 
 ## [1.2.0] - 2025-10-24
 ### Added
 - Full Docker support for deployment and local development, including Dockerfile, docker-compose.yml, and entrypoint script.
