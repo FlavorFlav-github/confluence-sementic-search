@@ -100,9 +100,3 @@ class GeminiModelAdapter(LLMAdapter):
             raise Exception(f"HTTP Request failed: {e}")
         except Exception as e:
             raise Exception(f"Gemini generation error: {e}")
-
-if __name__ == "__main__":
-    # Example usage
-    gemini_adapter = GeminiModelAdapter("gemini-pro", "gemini-2.5-pro")
-    gemini_adapter.setup()
-    print(gemini_adapter.ask("What is the capital of France ?"))
