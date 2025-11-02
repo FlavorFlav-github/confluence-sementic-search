@@ -122,10 +122,13 @@ The project includes a Makefile for convenient Docker Compose operations:
 # Build Docker images
 make build
 
-# Start all services
+# Start all services (CPU)
 make up
 
-# Start with custom config
+# Start all services (GPU)
+make up-gpu
+
+# Start with custom config (CPU)
 CONFIG=./config/custom_config.yaml make up
 
 # Stop all services
@@ -134,11 +137,17 @@ make down
 # View logs
 make logs
 
-# Run only the indexer
+# Run only the indexer (CPU)
 make indexer
 
-# Run only the API app
+# Run only the indexer (GPU)
+make indexer-gpu
+
+# Run only the API app (CPU)
 make app
+
+# Run only the API app (GPU)
+make app-gpu
 
 # Show all available commands
 make help
