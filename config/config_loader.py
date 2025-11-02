@@ -1,5 +1,5 @@
 import os, yaml, re
-from logging_config import logger
+from config.logging_config import logger
 
 def load_rag_config():
     """
