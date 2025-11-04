@@ -357,7 +357,7 @@ class AdvancedSearch:
             final_top_k=final_top_k + 3,
             score_threashold=score_threashold
         )
-
+        print(semantic_results)
         # --- 2. Keyword Search ---
         keyword_results = []
         if self.hybrid_search_index.is_fitted:

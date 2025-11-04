@@ -51,7 +51,6 @@ services:
       REDIS_PORT: ${REDIS_PORT:-6379}
       OVERRRIDE_INDEXING: ${OVERRRIDE_INDEXING:-false}
     command: ["python", "-m", "main_indexor"]
-    restart: unless-stopped
 
   rag-qdrant:
     image: qdrant/qdrant:latest

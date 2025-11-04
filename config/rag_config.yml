@@ -2,6 +2,6 @@ sources:
   - name: "Confluence Docs Sage"
     type: "confluence"
     base_url: "https://confluence.sage.com"
-    root_ids: ["583415205", "401175554"]
+    root_ids: ["417798815"]
     api_token: "${CONFLUENCE_TOKEN}"
     sync_interval: "12h"

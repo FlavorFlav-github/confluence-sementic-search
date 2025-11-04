@@ -56,7 +56,7 @@ indexer-gpu:
 
 # Run only the main app
 app:
-	RAG_CONFIG_PATH=$(CONFIG) docker compose -f $(COMPOSE_FILE) up rag-app rag-qdrant rag-cache
+	RAG_CONFIG_PATH=$(CONFIG) docker compose -f $(COMPOSE_FILE) up rag-qdrant rag-cache rag-postgres rag-db-init rag-app
 	
 app-gpu:
-	RAG_CONFIG_PATH=$(CONFIG) docker compose -f $(COMPOSE_FILE) -f $(COMPOSE_FILE_GPU) up rag-app rag-qdrant rag-cache
+	RAG_CONFIG_PATH=$(CONFIG) docker compose -f $(COMPOSE_FILE) -f $(COMPOSE_FILE_GPU) up rag-qdrant rag-cache rag-postgres rag-db-init rag-app

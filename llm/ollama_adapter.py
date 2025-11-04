@@ -116,7 +116,7 @@ class OllamaModelAdapter(LLMAdapter):
         self.is_ready = self.check_ollama_status()
         return self.is_ready
 
-    def ask(self, prompt: str,  max_token: int = 500, temp: float = 0.2) -> str:
+    def ask(self, prompt: str,  max_token: int = 500, temp: float = 0.2) -> tuple[str, dict]:
         """
         Public method for the Bridge to call for direct LLM generation.
         Delegates to the internal _generate method.
@@ -126,7 +126,7 @@ class OllamaModelAdapter(LLMAdapter):
 
         return self._generate(prompt, max_token, temp)
 
-    def _generate(self, prompt: str, max_token: int = 500, temp: float = 0.2) -> str:
+    def _generate(self, prompt: str, max_token: int = 500, temp: float = 0.2) -> tuple[str, dict]:
         """
         Abstract core method implementation: sends a prompt to the Ollama /api/generate endpoint.
         Args:
@@ -151,7 +151,7 @@ class OllamaModelAdapter(LLMAdapter):
 
         if response.status_code == 200:
             # Extract and strip the final generated response text
-            return response.json()["response"].strip()
+            return response.json()["response"].strip(), {}
         else:
             logger.error(f"Ollama API Error: HTTP {response.status_code} - {response.text}")
             raise Exception(f"Ollama API Error: HTTP {response.status_code} - {response.text}")

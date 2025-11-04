@@ -36,41 +36,6 @@ services:
     command: ["python", "-m", "main_api"]
     restart: unless-stopped
 
-  rag-indexer:
-    image: flavorflav/rag-app:latest
-    container_name: rag-indexer
-    entrypoint: [""]
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [ gpu, compute, utility ]
-    depends_on:
-      rag-qdrant:
-        condition: service_started
-      rag-cache:
-          condition: service_healthy
-    volumes:
-      - ./config/rag_config.yml:/app/config/rag_config.yml:ro
-      - ollama_models:/root/.ollama
-      - rag_data:/app/data
-      - nltk_data:/root/nltk_data
-    env_file:
-      - .env
-    environment:
-      RAG_CONFIG_PATH: /app/config/rag_config.yml
-      QDRANT_HOST: rag-qdrant
-      QDRANT_PORT: ${QDRANT_PORT:-6333}
-      REDIS_HOST: rag-cache
-      REDIS_PORT: ${REDIS_PORT:-6379}
-      NVIDIA_VISIBLE_DEVICES: all
-      NVIDIA_DRIVER_CAPABILITIES: compute,utility
-      OVERRRIDE_INDEXING: ${OVERRRIDE_INDEXING:-false}
-    command: ["python", "-m", "main_indexor"]
-    restart: unless-stopped
-
   rag-qdrant:
     image: qdrant/qdrant:latest
     container_name: rag-qdrant
@@ -93,7 +58,7 @@ services:
       - redis_data:/data
     command: redis-server --appendonly yes
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: [ "CMD", "redis-cli", "ping" ]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -121,7 +86,7 @@ services:
   rag-db-init:
     build: .
     container_name: rag-db-init
-    command: ["python", "/app/init_db.py"]
+    command: [ "python", "/app/init_db.py" ]
     env_file:
       - .env
     depends_on:
@@ -132,25 +97,9 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-rag_pass}
       POSTGRES_HOST: rag-postgres
       POSTGRES_PORT: 5432
-      POSTGRES_DB: rag_db
-      # Construct DATABASE_URL dynamically from other env vars
-      DATABASE_URL: "postgresql://${POSTGRES_USER:-rag_user}:${POSTGRES_PASSWORD:-rag_pass}@rag-postgres:${POSTGRES_PORT}/${POSTGRES_DB}"
+      POSTGRES_DB: ${POSTGRES_DB:-rag_db}
     restart: "no"
 
-  pgadmin:
-    image: dpage/pgadmin4:latest
-    container_name: pgadmin
-    restart: unless-stopped
-    environment:
-      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@example.com}
-      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin}
-    ports:
-      - "${PGADMIN_PORT:-5050}:80"
-    depends_on:
-      rag-postgres:
-        condition: service_healthy
-    volumes:
-      - pgadmin_data:/var/lib/pgadmin
 volumes:
   qdrant_storage:
   redis_data:
@@ -158,4 +107,3 @@ volumes:
   rag_data:
   nltk_data:
   pg_data:
-  pgadmin_data:

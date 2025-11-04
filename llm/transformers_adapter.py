@@ -84,7 +84,7 @@ class TransformerModelAdapter(LLMAdapter):
     # ---------------------------------------------------------------------
     # ASK (RAG ORCHESTRATION)
     # ---------------------------------------------------------------------
-    def ask(self, prompt: str, max_token: int = 500, temp: float = 0.2) -> str:
+    def ask(self, prompt: str, max_token: int = 500, temp: float = 0.2) -> tuple[str, dict]:
         """
         Performs a RAG-based answer generation using the local transformer model.
 
@@ -109,7 +109,7 @@ class TransformerModelAdapter(LLMAdapter):
     # ---------------------------------------------------------------------
     # _GENERATE (LOW-LEVEL MODEL CALL)
     # ---------------------------------------------------------------------
-    def _generate(self, prompt: str, max_token: int = 500, temp: float = 0.2) -> str:
+    def _generate(self, prompt: str, max_token: int = 500, temp: float = 0.2) -> tuple[str, dict]:
         """
         Sends the constructed prompt to the transformer model for inference.
 
@@ -132,9 +132,9 @@ class TransformerModelAdapter(LLMAdapter):
             if isinstance(self.model, AutoModelForCausalLM):
                 if response.startswith(prompt):
                     response = response[len(prompt):].strip()
-            return response
+            return response, {}
 
         except Exception as e:
             logger.error(f"❌ Generation error for '{self.model_name}': {e}")
-            return "Error generating response."
+            return "Error generating response.", {}
 

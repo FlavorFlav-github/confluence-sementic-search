@@ -1,4 +1,6 @@
 # File: bridge.txt
+import asyncio
+
 from config.logging_config import logger
 from typing import Dict, Any, List, Optional
 
@@ -11,6 +13,12 @@ from config.settings import (LLM_MAX_TOKEN_GENERATION, LLM_TEMP_GENERATION,
                              LLM_MAX_TOKEN_REFINEMENT, LLM_TEMP_REFINEMENT,
                              ENRICH_WITH_NEIGHBORS, COLLECTION_NAME)
 from cache.redis_cache_helper import RAGCacheHelper
+from utils.timing import Timer
+
+from db.schemas import QueryCreate, QueryLLMMetricCreate, QueryTimingCreate
+from db.core.database import AsyncSessionLocal, SessionLocal
+from db.crud import crud_registry
+
 
 # Assuming this constant is defined in config.settings
 # from config.settings import ENRICH_WITH_NEIGHBORS
@@ -19,6 +27,18 @@ MAX_TOKEN_GENERATION = LLM_MAX_TOKEN_GENERATION
 TEMP_GENERATION = LLM_TEMP_GENERATION
 MAX_TOKEN_REFINEMENT = LLM_MAX_TOKEN_REFINEMENT
 TEMP_REFINEMENT = LLM_TEMP_REFINEMENT
+
+async def create_query(obj_in: QueryCreate):
+    async with AsyncSessionLocal() as session:
+        await crud_registry.get("query").acreate(session, obj_in=obj_in)
+
+def create_query_time(obj_in: QueryTimingCreate):
+    with SessionLocal() as session:
+        return crud_registry.get("query_timing").create(session, obj_in=obj_in)
+
+def create_query_llm_metric(obj_in: QueryLLMMetricCreate):
+    with SessionLocal() as session:
+        return crud_registry.get("query_llm_metric").create(session, obj_in=obj_in)
 
 class LocalLLMBridge:
     """
@@ -229,72 +249,102 @@ class LocalLLMBridge:
             search_results = self.search.merge_adjacent_chunks_qdrant(search_results, k=ENRICH_WITH_NEIGHBORS)
         return True, search_results
 
-    def ask(self, question: str, top_k: int = 10, final_top_k: int = 3, score_threshold: float = 0, use_cache: bool = True, use_hybrid: bool = True) -> Dict:
+    def ask(self, question: str, top_k: int = 10, final_top_k: int = 3, score_threshold: float = 0, use_cache: bool = True, use_hybrid: bool = True, entity_id = None) -> Dict:
         """
         Performs the full RAG process using the Refiner for query expansion and 
         the Generator for the final answer.
         """
-        if not self.generator.is_ready or not self.refiner.is_ready:
-            logger.error("One or both LLM models are not set up or ready.")
-            raise RuntimeError("One or both LLM models are not set up or ready.")
+        with Timer("RAG Ask") as rag_ask_time:
+            if not self.generator.is_ready or not self.refiner.is_ready:
+                logger.error("One or both LLM models are not set up or ready.")
+                raise RuntimeError("One or both LLM models are not set up or ready.")
 
-        # --- CACHE CHECK ---
-        cached_answer = self._check_cached_answer(use_cache, question, top_k, final_top_k, score_threshold)
-        if cached_answer:
-            return cached_answer
+            # --- CACHE CHECK ---
+            cached_answer = self._check_cached_answer(use_cache, question, top_k, final_top_k, score_threshold)
+            if cached_answer:
+                return cached_answer
 
-        # Step 0: Refine query using the *Refiner* LLM
-        refined_queries = self._refine_query(question, MAX_TOKEN_REFINEMENT, TEMP_REFINEMENT)
+            with Timer("Refine Query") as refine_time:
+                # Step 0: Refine query using the *Refiner* LLM
+                refined_queries = self._refine_query(question, MAX_TOKEN_REFINEMENT, TEMP_REFINEMENT)
 
-        # Step 1: Perform semantic search using the refined queries
-        result_found, search_results = self._get_search_results(question, use_hybrid, refined_queries, top_k, final_top_k, score_threshold)
-        if not result_found:
-            return search_results
+            with Timer("Semantic Search") as sem_search_time:
+                # Step 1: Perform semantic search using the refined queries
+                result_found, search_results = self._get_search_results(question, use_hybrid, refined_queries, top_k, final_top_k, score_threshold)
+                if not result_found:
+                    return search_results
 
-        # Step 2: Format Context for the LLM
-        context_pieces = []
-        for i, result in enumerate(search_results, 1):
-            context_pieces.append(
-                {
-                    'text': f"[({result.source}) Source {i} - Page title : {result.title}]\nPage link : {result.link}\nPage extract : {result.text.strip()}\n",
-                    'title': result.title,
-                    'link': result.link,
-                    'score': result.score,
-                    'source': result.source}
-            )
+            # Step 2: Format Context for the LLM
+            context_pieces = []
+            for i, result in enumerate(search_results, 1):
+                context_pieces.append(
+                    {
+                        'text': f"[({result.source}) Source {i} - Page title : {result.title}]\nPage link : {result.link}\nPage extract : {result.text.strip()}\n",
+                        'title': result.title,
+                        'link': result.link,
+                        'score': result.score,
+                        'source': result.source}
+                )
 
-        context = "\n\n".join([piece['text'] for piece in context_pieces])
+            context = "\n\n".join([piece['text'] for piece in context_pieces])
 
-        # Combine the system prompt, context, and question for the final LLM prompt
-        final_prompt = f"{self.system_prompt}\n\nDOCUMENTATION:\n{context}\n\nQUESTION: {question}"
+            # Combine the system prompt, context, and question for the final LLM prompt
+            final_prompt = f"{self.system_prompt}\n\nDOCUMENTATION:\n{context}\n\nQUESTION: {question}"
 
-        # Step 3: Generate the Final Answer using the *Generator* LLM
-        try:
-            logger.info(f"🤖 Generating answer with local LLM ({self.generator.model_name})...")
-            # --- Call the Generator's generation method ---
-            answer = self.generator.ask(final_prompt, MAX_TOKEN_GENERATION, TEMP_GENERATION)
+            # Step 3: Generate the Final Answer using the *Generator* LLM
+            try:
+                logger.info(f"🤖 Generating answer with local LLM ({self.generator.model_name})...")
+                with Timer("LLM Ask") as llm_ask_time:
+                    # --- Call the Generator's generation method ---
+                    answer, token_count = self.generator.ask(final_prompt, MAX_TOKEN_GENERATION, TEMP_GENERATION)
 
-        except Exception as e:
-            answer = f"Error generating answer: {str(e)}"
-            logger.error(f"LLM generation error with generator model: {e}")
+            except Exception as e:
+                token_count = {'promptTokenCount': None, 'candidatesTokenCount': None,
+                               'thoughtsTokenCount': None, 'totalTokenCount': None}
+                answer = f"Error generating answer: {str(e)}"
+                logger.error(f"LLM generation error with generator model: {e}")
 
-        result = {
-            'question': question,
-            'answer': answer,
-            'sources': [
-                {
-                    'source': piece['source'],
-                    'title': piece['title'],
-                    'link': piece['link'],
-                    'score': piece['score']
-                } for piece in context_pieces
-            ],
-            'model_used': self.model_name,
-            'from_cache': False
-        }
+            result = {
+                'question': question,
+                'answer': answer,
+                'sources': [
+                    {
+                        'source': piece['source'],
+                        'title': piece['title'],
+                        'link': piece['link'],
+                        'score': piece['score']
+                    } for piece in context_pieces
+                ],
+                'model_used': self.model_name,
+                'from_cache': False
+            }
 
-        # Step 4: Cache the answer
-        self._save_cached_answer(use_cache, question, result, top_k, final_top_k, score_threshold)
+            # Step 4: Cache the answer
+            self._save_cached_answer(use_cache, question, result, top_k, final_top_k, score_threshold)
+
+        if entity_id:
+            query_llm_metric_created = create_query_llm_metric(QueryLLMMetricCreate(
+                input_token=token_count.get("promptTokenCount", None),
+                output_token=token_count.get("candidatesTokenCount", None),
+                thought_token=token_count.get("thoughtsTokenCount", None),
+                total_token=token_count.get("totalTokenCount", None),
+            ))
+
+            query_timing_created = create_query_time(QueryTimingCreate(
+                time_processed=rag_ask_time.elapsed,
+                time_llm_refine=refine_time.elapsed,
+                time_sem_search=sem_search_time.elapsed,
+                time_llm_ask=llm_ask_time.elapsed
+            ))
+
+            asyncio.create_task(create_query(QueryCreate(
+                entity_id=entity_id,
+                query_llm_metric_id=query_llm_metric_created.id,
+                query_timing_id=query_timing_created.id,
+                question=question,
+                model_used=self.generation_model_key,
+                cache_enabled=self.cache_enabled and use_cache
+            )))
 
         # Step 5: Format and Return Results
         return result

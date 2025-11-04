@@ -1,6 +1,6 @@
 import os
 import requests
-from typing import Any
+from typing import Any, Dict
 
 from llm.base_adapter import LLMAdapter
 from config.logging_config import logger
@@ -35,7 +35,7 @@ class GeminiModelAdapter(LLMAdapter):
         logger.info("✅ Gemini API key found. Ready to send requests.")
         return True
 
-    def ask(self, prompt: str, max_token: int = 8096, temp: float = 0.2) -> str:
+    def ask(self, prompt: str, max_token: int = 8096, temp: float = 0.2) -> tuple[str, dict]:
         """
         Public method for the Bridge to call for direct LLM generation.
         """
@@ -44,7 +44,7 @@ class GeminiModelAdapter(LLMAdapter):
             raise RuntimeError(f"Gemini model '{self.model_name}' is not set up or ready.")
         return self._generate(prompt, max_token, temp)
 
-    def _generate(self, prompt: str, max_token: int = 8096, temp: float = 0.2) -> str:
+    def _generate(self, prompt: str, max_token: int = 8096, temp: float = 0.2) -> tuple[str, dict]:
         """
         Core implementation: Sends the prompt to the Gemini API using a REST POST request.
         """
@@ -62,8 +62,6 @@ class GeminiModelAdapter(LLMAdapter):
                 "maxOutputTokens": max_token
             }
         }
-
-        # Add system instruction if available
 
         try:
             response = requests.post(self.api_url, headers=headers, json=payload, timeout=60)
@@ -91,13 +89,15 @@ class GeminiModelAdapter(LLMAdapter):
             candidates_token_count = usage.get("candidatesTokenCount", None)
             thoughts_token_count = usage.get("thoughtsTokenCount", None)
             total_token_count = usage.get("totalTokenCount", None)
+            token_count = {'promptTokenCount': prompt_tokens, 'candidatesTokenCount': candidates_token_count,
+                           'thoughtsTokenCount': thoughts_token_count, 'totalTokenCount': total_token_count}
             if usage:
                 logger.info(f"🔹 Prompt Tokens: {prompt_tokens}")
                 logger.info(f"🔹 Candidate Tokens: {candidates_token_count}")
                 logger.info(f"🔹 Thoughts Token: {thoughts_token_count}")
                 logger.info(f"🔹 Total Token: {total_token_count}")
 
-            return text
+            return text, token_count
 
         except requests.exceptions.RequestException as e:
             logger.error(f"HTTP Request failed: {e}")

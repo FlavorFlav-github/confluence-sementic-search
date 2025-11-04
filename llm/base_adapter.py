@@ -1,5 +1,5 @@
 from abc import abstractmethod, ABC
-from typing import Any
+from typing import Any, Dict
 
 
 class LLMAdapter(ABC):
@@ -58,7 +58,7 @@ class LLMAdapter(ABC):
         pass
 
     @abstractmethod
-    def ask(self, question: str, max_token: int = 500, temp: float = 0.2) -> str:
+    def ask(self, question: str, max_token: int = 500, temp: float = 0.2) -> tuple[str, dict]:
         """
         Abstract method to ask a question, perform RAG, and get an answer.
 
@@ -76,7 +76,7 @@ class LLMAdapter(ABC):
         pass
 
     @abstractmethod
-    def _generate(self, prompt: str) -> str:
+    def _generate(self, prompt: str) -> tuple[str, dict]:
         """
         Abstract core method to interact directly with the specific LLM backend.
 

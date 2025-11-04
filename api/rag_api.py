@@ -2,10 +2,16 @@
 API Layer for Confluence RAG system.
 Exposes endpoints for asking questions against the Confluence index.
 """
-from fastapi import FastAPI, HTTPException
+import asyncio
+
+from fastapi import FastAPI, HTTPException, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional
+
+from db.schemas import EntityCreate
+from db.core.database import AsyncSessionLocal, SessionLocal
+from db.crud import crud_registry
 
 from indexer.qdrant_utils import get_qdrant_client
 
@@ -52,6 +58,9 @@ class HealthResponse(BaseModel):
     status: str
     services: dict
 
+class ClientInfo(BaseModel):
+    ip: str
+    user_agent: str
 
 # ---------------------------
 # App Initialization
@@ -80,6 +89,24 @@ except Exception as e:
     rag_system = None
     raise
 
+# ---------------------------
+# Helpers
+# ---------------------------
+async def get_client_info(request: Request) -> ClientInfo:
+    # Get real client IP (support X-Forwarded-For if behind proxy)
+    x_forwarded_for = request.headers.get("x-forwarded-for")
+    if x_forwarded_for:
+        ip = x_forwarded_for.split(",")[0].strip()
+    else:
+        ip = request.client.host
+
+    # Get User-Agent
+    user_agent = request.headers.get("user-agent", "unknown")
+    return ClientInfo(ip=ip, user_agent=user_agent)
+
+def create_entity_in_db(obj_in: EntityCreate):
+    with SessionLocal() as session:
+        return crud_registry.get("entity").create(session, obj_in=obj_in)
 
 # ---------------------------
 # Endpoints
@@ -126,8 +153,17 @@ def health_check():
 
 
 @app.post("/v1/rag/ask", response_model=AnswerResponse, tags=["RAG"])
-def ask_question(request: QuestionRequest):
+async def ask_question(request: QuestionRequest, client_info: ClientInfo = Depends(get_client_info)):
     model_select = request.model if request.model is not None else LLM_MODEL_GENERATION
+
+    # Access client info
+    ip = client_info.ip
+    user_agent = client_info.user_agent
+
+    entity_created = create_entity_in_db(EntityCreate(
+        ip_address=ip,
+        browser_agent=user_agent
+    ))
 
     if model_select not in LLMConfig.AVAILABLE_MODELS:
         raise HTTPException(status_code=404, detail="Model not available")
@@ -156,7 +192,8 @@ def ask_question(request: QuestionRequest):
         result = rag_system_llm.ask(request.question,
                                 top_k=request.search_top_k,
                                 final_top_k=request.llm_top_k,
-                                score_threshold=request.search_min_score)
+                                score_threshold=request.search_min_score,
+                                entity_id=entity_created.id)
 
         # Clean the answer formatting
         answer_text = result.get("answer", "Sorry, I could not generate an answer.")
