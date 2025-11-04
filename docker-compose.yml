@@ -80,9 +80,47 @@ services:
       timeout: 3s
       retries: 5
 
+  rag-postgres:
+    image: postgres:16-alpine
+    container_name: rag-postgres
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-rag_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-rag_pass}
+      POSTGRES_DB: ${POSTGRES_DB:-rag_db}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-rag_user} -d ${POSTGRES_DB:-rag_db}" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  rag-db-init:
+    build: .
+    container_name: rag-db-init
+    command: ["python", "/app/init_db.py"]
+    env_file:
+      - .env
+    depends_on:
+      rag-postgres:
+        condition: service_healthy
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-rag_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-rag_pass}
+      POSTGRES_HOST: rag-postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB:-rag_db}
+    restart: "no"
+
 volumes:
   qdrant_storage:
   redis_data:
   ollama_models:
   rag_data:
   nltk_data:
+  pg_data:

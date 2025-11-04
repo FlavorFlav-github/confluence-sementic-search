@@ -18,8 +18,12 @@ data:
   REDIS_HOST: "rag-cache"
   REDIS_PORT: "6379"
   RAG_CONFIG_PATH: "/app/config/rag_config.yml"
-  NVIDIA_VISIBLE_DEVICES: "all"
-  NVIDIA_DRIVER_CAPABILITIES: "compute,utility"
+  POSTGRES_HOST: "rag-postgres"
+  POSTGRES_PORT: "5432"
+  POSTGRES_USER: "rag_user"
+  POSTGRES_DB: "rag_db"
+  RAG_API_PORT: "8000"
+  OVERRIDE_INDEXING: "false"
 
 ---
 # ConfigMap for rag_config.yml
@@ -51,6 +55,7 @@ spec:
   resources:
     requests:
       storage: 10Gi
+  # storageClassName: <your-storage-class>  # Uncomment and set for production
 
 ---
 apiVersion: v1
@@ -64,6 +69,7 @@ spec:
   resources:
     requests:
       storage: 5Gi
+  # storageClassName: <your-storage-class>  # Uncomment and set for production
 
 ---
 apiVersion: v1
@@ -77,6 +83,7 @@ spec:
   resources:
     requests:
       storage: 20Gi
+  # storageClassName: <your-storage-class>  # Uncomment and set for production
 
 ---
 apiVersion: v1
@@ -90,6 +97,7 @@ spec:
   resources:
     requests:
       storage: 10Gi
+  # storageClassName: <your-storage-class>  # Uncomment and set for production
 
 ---
 apiVersion: v1
@@ -103,6 +111,117 @@ spec:
   resources:
     requests:
       storage: 5Gi
+  # storageClassName: <your-storage-class>  # Uncomment and set for production
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-data
+  namespace: rag-system
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+  # storageClassName: <your-storage-class>  # Uncomment and set for production
+
+---
+# PostgreSQL Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rag-postgres
+  namespace: rag-system
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate  # Important for stateful services with RWO volumes
+  selector:
+    matchLabels:
+      app: rag-postgres
+  template:
+    metadata:
+      labels:
+        app: rag-postgres
+    spec:
+      containers:
+      - name: postgres
+        image: postgres:16-alpine
+        ports:
+        - containerPort: 5432
+          name: postgres
+        env:
+        - name: POSTGRES_USER
+          valueFrom:
+            configMapKeyRef:
+              name: rag-config
+              key: POSTGRES_USER
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: rag-secrets
+              key: POSTGRES_PASSWORD
+        - name: POSTGRES_DB
+          valueFrom:
+            configMapKeyRef:
+              name: rag-config
+              key: POSTGRES_DB
+        volumeMounts:
+        - name: postgres-data
+          mountPath: /var/lib/postgresql/data
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "1000m"
+        livenessProbe:
+          exec:
+            command:
+            - pg_isready
+            - -U
+            - rag_user
+            - -d
+            - rag_db
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 6
+        readinessProbe:
+          exec:
+            command:
+            - pg_isready
+            - -U
+            - rag_user
+            - -d
+            - rag_db
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 5
+          failureThreshold: 3
+      volumes:
+      - name: postgres-data
+        persistentVolumeClaim:
+          claimName: postgres-data
+
+---
+# PostgreSQL Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: rag-postgres
+  namespace: rag-system
+spec:
+  selector:
+    app: rag-postgres
+  ports:
+  - port: 5432
+    targetPort: 5432
+    name: postgres
+  type: ClusterIP
 
 ---
 # Qdrant Deployment
@@ -113,6 +232,8 @@ metadata:
   namespace: rag-system
 spec:
   replicas: 1
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: rag-qdrant
@@ -126,12 +247,38 @@ spec:
         image: qdrant/qdrant:latest
         ports:
         - containerPort: 6333
+          name: http
+        - containerPort: 6334
+          name: grpc
         volumeMounts:
         - name: qdrant-storage
           mountPath: /qdrant/storage
         envFrom:
         - secretRef:
             name: rag-secrets
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "2000m"
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 6333
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: 6333
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 5
+          failureThreshold: 3
       volumes:
       - name: qdrant-storage
         persistentVolumeClaim:
@@ -150,6 +297,10 @@ spec:
   ports:
   - port: 6333
     targetPort: 6333
+    name: http
+  - port: 6334
+    targetPort: 6334
+    name: grpc
   type: ClusterIP
 
 ---
@@ -161,6 +312,8 @@ metadata:
   namespace: rag-system
 spec:
   replicas: 1
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: rag-cache
@@ -174,6 +327,7 @@ spec:
         image: redis:7-alpine
         ports:
         - containerPort: 6379
+          name: redis
         args:
         - redis-server
         - --appendonly
@@ -181,6 +335,13 @@ spec:
         volumeMounts:
         - name: redis-data
           mountPath: /data
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "1000m"
         livenessProbe:
           exec:
             command:
@@ -198,7 +359,7 @@ spec:
           initialDelaySeconds: 5
           periodSeconds: 5
           timeoutSeconds: 3
-          failureThreshold: 5
+          failureThreshold: 3
         envFrom:
         - secretRef:
             name: rag-secrets
@@ -220,7 +381,88 @@ spec:
   ports:
   - port: 6379
     targetPort: 6379
+    name: redis
   type: ClusterIP
+
+---
+# Database Initialization Job
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: rag-db-init
+  namespace: rag-system
+spec:
+  ttlSecondsAfterFinished: 300  # Clean up 5 minutes after completion
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        app: rag-db-init
+    spec:
+      restartPolicy: OnFailure
+      initContainers:
+      - name: wait-for-postgres
+        image: postgres:16-alpine
+        command:
+        - sh
+        - -c
+        - |
+          until pg_isready -h rag-postgres -p 5432 -U rag_user; do
+            echo "Waiting for PostgreSQL to be ready..."
+            sleep 2
+          done
+          echo "PostgreSQL is ready!"
+      containers:
+      - name: db-init
+        image: ghcr.io/flavorflav-github/rag-app:latest
+        command: ["python", "/app/init_db.py"]
+        env:
+        - name: POSTGRES_USER
+          valueFrom:
+            configMapKeyRef:
+              name: rag-config
+              key: POSTGRES_USER
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: rag-secrets
+              key: POSTGRES_PASSWORD
+        - name: POSTGRES_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: rag-config
+              key: POSTGRES_HOST
+        - name: POSTGRES_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: rag-config
+              key: POSTGRES_PORT
+        - name: POSTGRES_DB
+          valueFrom:
+            configMapKeyRef:
+              name: rag-config
+              key: POSTGRES_DB
+        - name: DATABASE_URL
+          value: "postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@$(POSTGRES_HOST):$(POSTGRES_PORT)/$(POSTGRES_DB)"
+        envFrom:
+        - secretRef:
+            name: rag-secrets
+        volumeMounts:
+        - name: config
+          mountPath: /app/config/rag_config.yml
+          subPath: rag_config.yml
+          readOnly: true
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+      volumes:
+      - name: config
+        configMap:
+          name: rag-app-config
 
 ---
 # RAG App Deployment
@@ -239,15 +481,55 @@ spec:
       labels:
         app: rag-app
     spec:
+      initContainers:
+      - name: wait-for-postgres
+        image: postgres:16-alpine
+        command:
+        - sh
+        - -c
+        - |
+          until pg_isready -h rag-postgres -p 5432 -U rag_user; do
+            echo "Waiting for PostgreSQL to be ready..."
+            sleep 2
+          done
+          echo "PostgreSQL is ready!"
+      - name: wait-for-redis
+        image: redis:7-alpine
+        command:
+        - sh
+        - -c
+        - |
+          until redis-cli -h rag-cache -p 6379 ping; do
+            echo "Waiting for Redis to be ready..."
+            sleep 2
+          done
+          echo "Redis is ready!"
+      - name: wait-for-db-init
+        image: bitnami/kubectl:latest
+        command:
+        - sh
+        - -c
+        - |
+          until kubectl get job rag-db-init -n rag-system -o jsonpath='{.status.succeeded}' | grep -q 1; do
+            echo "Waiting for database initialization to complete..."
+            sleep 5
+          done
+          echo "Database initialization completed!"
       containers:
       - name: rag-app
         image: ghcr.io/flavorflav-github/rag-app:latest
         ports:
         - containerPort: 8000
+          name: http
         command: ["python", "-m", "main_api"]
         env:
-        - name: OLLAMA_MODELS
-          value: ""  # Set your models here
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: rag-secrets
+              key: POSTGRES_PASSWORD
+        - name: DATABASE_URL
+          value: "postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@$(POSTGRES_HOST):$(POSTGRES_PORT)/$(POSTGRES_DB)"
         envFrom:
         - configMapRef:
             name: rag-config
@@ -264,10 +546,29 @@ spec:
           mountPath: /app/data
         - name: nltk-data
           mountPath: /root/nltk_data
-        securityContext:
-          capabilities:
-            add:
-            - SYS_ADMIN
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
+            memory: "4Gi"
+            cpu: "2000m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
       volumes:
       - name: config
         configMap:
@@ -295,63 +596,208 @@ spec:
   ports:
   - port: 8000
     targetPort: 8000
-    nodePort: 30800  # Change as needed
-  type: NodePort  # or LoadBalancer for cloud environments
+    name: http
+    # nodePort: 30800  # Uncomment for NodePort
+  type: ClusterIP  # Change to NodePort or LoadBalancer for external access
 
 ---
-# RAG Indexer Deployment
-apiVersion: apps/v1
-kind: Deployment
+# RAG Indexer CronJob
+apiVersion: batch/v1
+kind: CronJob
 metadata:
   name: rag-indexer
   namespace: rag-system
 spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: rag-indexer
-  template:
-    metadata:
-      labels:
-        app: rag-indexer
+  schedule: "0 */12 * * *"  # Run every 12 hours (adjust as needed)
+  concurrencyPolicy: Forbid  # Prevent overlapping runs
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
     spec:
-      containers:
-      - name: rag-indexer
-        image: ghcr.io/flavorflav-github/rag-app:latest
-        command: ["python", "-m", "main_indexor"]
-        env:
-        - name: OVERRRIDE_INDEXING
-          value: "false"  # Set from environment
-        envFrom:
-        - configMapRef:
-            name: rag-config
-        - secretRef:
-            name: rag-secrets
-        volumeMounts:
-        - name: config
-          mountPath: /app/config/rag_config.yml
-          subPath: rag_config.yml
-          readOnly: true
-        - name: ollama-models
-          mountPath: /root/.ollama
-        - name: rag-data
-          mountPath: /app/data
-        - name: nltk-data
-          mountPath: /root/nltk_data
-        securityContext:
-          capabilities:
-            add:
-            - SYS_ADMIN
-      volumes:
-      - name: config
-        configMap:
-          name: rag-app-config
-      - name: ollama-models
-        persistentVolumeClaim:
-          claimName: ollama-models
-      - name: rag-data
-        persistentVolumeClaim:
-          claimName: rag-data
-      - name: nltk-data
-        persistentVolumeClaim:
-          claimName: nltk-data
+      backoffLimit: 2
+      template:
+        metadata:
+          labels:
+            app: rag-indexer
+        spec:
+          restartPolicy: OnFailure
+          initContainers:
+          - name: wait-for-qdrant
+            image: curlimages/curl:latest
+            command:
+            - sh
+            - -c
+            - |
+              until curl -f http://rag-qdrant:6333/healthz; do
+                echo "Waiting for Qdrant to be ready..."
+                sleep 5
+              done
+              echo "Qdrant is ready!"
+          - name: wait-for-postgres
+            image: postgres:16-alpine
+            command:
+            - sh
+            - -c
+            - |
+              until pg_isready -h rag-postgres -p 5432 -U rag_user; do
+                echo "Waiting for PostgreSQL to be ready..."
+                sleep 2
+              done
+              echo "PostgreSQL is ready!"
+          - name: wait-for-redis
+            image: redis:7-alpine
+            command:
+            - sh
+            - -c
+            - |
+              until redis-cli -h rag-cache -p 6379 ping; do
+                echo "Waiting for Redis to be ready..."
+                sleep 2
+              done
+              echo "Redis is ready!"
+          containers:
+          - name: rag-indexer
+            image: ghcr.io/flavorflav-github/rag-app:latest
+            command: ["python", "-m", "main_indexor"]
+            env:
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: rag-secrets
+                  key: POSTGRES_PASSWORD
+            - name: DATABASE_URL
+              value: "postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@$(POSTGRES_HOST):$(POSTGRES_PORT)/$(POSTGRES_DB)"
+            envFrom:
+            - configMapRef:
+                name: rag-config
+            - secretRef:
+                name: rag-secrets
+            volumeMounts:
+            - name: config
+              mountPath: /app/config/rag_config.yml
+              subPath: rag_config.yml
+              readOnly: true
+            - name: ollama-models
+              mountPath: /root/.ollama
+            - name: rag-data
+              mountPath: /app/data
+            - name: nltk-data
+              mountPath: /root/nltk_data
+            resources:
+              requests:
+                memory: "1Gi"
+                cpu: "500m"
+              limits:
+                memory: "4Gi"
+                cpu: "2000m"
+          volumes:
+          - name: config
+            configMap:
+              name: rag-app-config
+          - name: ollama-models
+            persistentVolumeClaim:
+              claimName: ollama-models
+          - name: rag-data
+            persistentVolumeClaim:
+              claimName: rag-data
+          - name: nltk-data
+            persistentVolumeClaim:
+              claimName: nltk-data
+
+---
+# Network Policy for rag-postgres (only accessible by rag-app, rag-indexer, and rag-db-init)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: rag-postgres-netpol
+  namespace: rag-system
+spec:
+  podSelector:
+    matchLabels:
+      app: rag-postgres
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: rag-app
+    - podSelector:
+        matchLabels:
+          app: rag-indexer
+    - podSelector:
+        matchLabels:
+          app: rag-db-init
+    ports:
+    - protocol: TCP
+      port: 5432
+
+---
+# Network Policy for rag-cache (only accessible by rag-app and rag-indexer)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: rag-cache-netpol
+  namespace: rag-system
+spec:
+  podSelector:
+    matchLabels:
+      app: rag-cache
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: rag-app
+    - podSelector:
+        matchLabels:
+          app: rag-indexer
+    ports:
+    - protocol: TCP
+      port: 6379
+
+---
+# Network Policy for rag-qdrant (only accessible by rag-app and rag-indexer)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: rag-qdrant-netpol
+  namespace: rag-system
+spec:
+  podSelector:
+    matchLabels:
+      app: rag-qdrant
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: rag-app
+    - podSelector:
+        matchLabels:
+          app: rag-indexer
+    ports:
+    - protocol: TCP
+      port: 6333
+    - protocol: TCP
+      port: 6334
+
+---
+# Network Policy for rag-app (accessible from outside the namespace)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: rag-app-netpol
+  namespace: rag-system
+spec:
+  podSelector:
+    matchLabels:
+      app: rag-app
+  policyTypes:
+  - Ingress
+  ingress:
+  - ports:
+    - protocol: TCP
+      port: 8000

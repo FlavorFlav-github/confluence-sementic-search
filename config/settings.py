@@ -5,8 +5,23 @@ from config.secrets_manager import get_secret
 os.environ['PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION'] = "python"
 
 # -------------------------
-# 1. Enhanced Config
+# 1. Config
 # -------------------------
+POSTGRES_USER = get_secret("POSTGRES_USER")
+POSTGRES_PASSWORD = get_secret("POSTGRES_PASSWORD")
+POSTGRES_HOST = get_secret("POSTGRES_HOST")
+POSTGRES_PORT = get_secret("POSTGRES_PORT")
+POSTGRES_DB = get_secret("POSTGRES_DB")
+
+DATABASE_URL_SYNC = (
+        f"postgresql+psycopg2://{POSTGRES_USER}:{POSTGRES_PASSWORD}@"
+        f"{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}"
+    )
+DATABASE_URL_ASYNC = (
+        f"postgresql+asyncpg://{POSTGRES_USER}:{POSTGRES_PASSWORD}@"
+        f"{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}"
+    )
+
 QDRANT_HOST = get_secret("QDRANT_HOST", "qdrant")
 QDRANT_BASE_URL = get_secret("QDRANT_BASE_URL", "http://localhost")
 QDRANT_PORT = os.getenv("QDRANT_PORT", "6333")

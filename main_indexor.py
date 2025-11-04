@@ -21,6 +21,10 @@ from indexer.qdrant_utils import get_qdrant_client
 from indexer.text_processor import EnhancedTextProcessor
 from config.config_loader import load_rag_config
 
+from db.core.database import init_db
+from db.models import user, entity, query, query_llm_metric, query_timing
+
+
 # Configuration flag: Set to True to completely wipe and rebuild the index (Qdrant collection and TF-IDF model)
 RESET_INDEXOR = OVERRIDE_INDEXING
 INTERVAL_SECONDS = 6 * 60 * 60  # 6 hours
@@ -97,11 +101,9 @@ def main():
 
 
 if __name__ == "__main__":
+    init_db()
     logger.info("🕒 Indexer service started, syncing every 6 hours")
-    while True:
-        try:
-            main()  # run your full sync routine
-        except Exception as e:
-            logger.error(f"❌ Error during indexing: {e}")
-        logger.info(f"✅ Sleeping for {INTERVAL_SECONDS / 3600} hours...")
-        time.sleep(INTERVAL_SECONDS)
+    try:
+        main()  # run your full sync routine
+    except Exception as e:
+        logger.error(f"❌ Error during indexing: {e}")
